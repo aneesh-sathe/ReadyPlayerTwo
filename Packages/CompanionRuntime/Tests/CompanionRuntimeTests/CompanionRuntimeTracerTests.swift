@@ -263,6 +263,51 @@ struct CompanionRuntimeTracerTests {
     #expect(moved.placement.position == StagePoint(x: -720, y: 450))
     #expect(moved.voice == .idle)
   }
+
+  @Test
+  func sleepEndsVoiceAndWakeNeverReconnects() async throws {
+    let voice = ScriptedVoiceSession()
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: RecordingStage(),
+      voice: voice,
+      platform: FixedPlatform(),
+      clock: ImmediateClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+    _ = await snapshots.next()
+    await runtime.send(.summon(.character))
+    _ = await snapshots.next()
+    voice.emit(.listening)
+    _ = await snapshots.next()
+
+    await runtime.send(.platform(.sleep))
+
+    let sleepingValue = await snapshots.next()
+    let sleeping = try #require(sleepingValue)
+    #expect(sleeping.voice == .ending)
+    #expect(!sleeping.isVisible)
+    #expect(voice.stopCount == 1)
+
+    voice.emit(.ended)
+
+    let asleepValue = await snapshots.next()
+    let asleep = try #require(asleepValue)
+    #expect(asleep.voice == .idle)
+    #expect(!asleep.isVisible)
+
+    await runtime.send(.platform(.wake))
+
+    let awakeValue = await snapshots.next()
+    let awake = try #require(awakeValue)
+    #expect(awake.voice == .idle)
+    #expect(awake.isVisible)
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 1)
+  }
 }
 
 @MainActor

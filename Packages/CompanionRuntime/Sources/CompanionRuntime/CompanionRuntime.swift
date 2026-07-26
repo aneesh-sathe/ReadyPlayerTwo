@@ -28,6 +28,18 @@ public enum SummonSource: String, Equatable, Sendable {
   case statusMenu
 }
 
+public enum PlatformEvent: Equatable, Sendable {
+  case sleep
+  case wake
+  case lock
+  case unlock
+  case screenSaverStarted
+  case screenSaverEnded
+  case missionControlStarted
+  case missionControlEnded
+  case displayConfigurationChanged
+}
+
 public enum CompanionCommand: Equatable, Sendable {
   case launch
   case summon(SummonSource)
@@ -37,6 +49,7 @@ public enum CompanionCommand: Equatable, Sendable {
   case retryConversation
   case drag(to: StagePoint)
   case moveToCurrentDisplay
+  case platform(PlatformEvent)
 }
 
 public enum VoiceSessionEvent: Equatable, Sendable {
@@ -254,6 +267,7 @@ public final class CompanionRuntime {
   private var voiceState = VoiceSessionState.idle
   private var bubbleState = BubbleState.hidden
   private var recoverableError: CompanionFailure?
+  private var stageSuppressed = false
   private var voiceEventTask: Task<Void, Never>?
 
   public init(
@@ -289,7 +303,7 @@ public final class CompanionRuntime {
       await publish()
 
     case .summon:
-      guard voiceState == .idle else {
+      guard voiceState == .idle, !stageSuppressed else {
         return
       }
 
@@ -342,6 +356,41 @@ public final class CompanionRuntime {
       placement = CompanionPlacement(
         displayID: display.id,
         position: display.visibleFrame.midpoint
+      )
+      await publish()
+
+    case .platform(let event):
+      await handlePlatformEvent(event)
+    }
+  }
+
+  private func handlePlatformEvent(_ event: PlatformEvent) async {
+    switch event {
+    case .sleep, .lock, .screenSaverStarted, .missionControlStarted:
+      stageSuppressed = true
+
+      if voiceState != .idle, voiceState != .ending {
+        voiceState = .ending
+        bubbleState = .ending
+        await publish()
+        await voice.stop()
+      } else {
+        await publish()
+      }
+
+    case .wake, .unlock, .screenSaverEnded, .missionControlEnded:
+      stageSuppressed = false
+      await publish()
+
+    case .displayConfigurationChanged:
+      let display = await platform.displayContainingPointer()
+      currentDisplay = display
+      placement = CompanionPlacement(
+        displayID: display.id,
+        position: display.visibleFrame.clamped(
+          placement.position,
+          inset: 64
+        )
       )
       await publish()
     }
@@ -422,7 +471,7 @@ public final class CompanionRuntime {
     let snapshot = CompanionSnapshot(
       avatar: avatar,
       basePresence: basePresence,
-      isVisible: basePresence != .hidden || voiceState != .idle,
+      isVisible: !stageSuppressed && (basePresence != .hidden || voiceState != .idle),
       placement: placement,
       voice: voiceState,
       bubble: bubbleState,
