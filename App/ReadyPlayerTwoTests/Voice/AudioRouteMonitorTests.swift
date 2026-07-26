@@ -6,6 +6,52 @@ import Testing
 @MainActor
 struct AudioRouteMonitorTests {
   @Test
+  func queuedDefaultRouteCallbackCannotReinstallAfterStop() throws {
+    let defaultInput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultInputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let defaultOutput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultOutputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let inputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(17),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeInput
+    )
+    let outputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(23),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeOutput
+    )
+    let properties = ScriptedAudioRouteProperties(
+      values: [
+        defaultInput: 17,
+        defaultOutput: 23,
+        inputDataSource: 41,
+        outputDataSource: 43,
+      ]
+    )
+    let hardware = CoreAudioDefaultRouteHardware(properties: properties)
+    let recorder = AudioRouteChangeRecorder()
+    try hardware.observeDefaultRoute {
+      recorder.count += 1
+    }
+    let queuedCallback = try #require(
+      properties.callback(for: defaultInput)
+    )
+
+    hardware.stopObservingDefaultRoute()
+    queuedCallback()
+
+    #expect(properties.activeObservations.isEmpty)
+    #expect(recorder.count == 0)
+  }
+
+  @Test
   func listenerFailureCleansUpEveryInstalledObservation() {
     let defaultInput = AudioRouteProperty(
       objectID: AudioObjectID(kAudioObjectSystemObject),
@@ -365,6 +411,14 @@ private final class ScriptedAudioRouteProperties:
     for callback in callbacks {
       callback()
     }
+  }
+
+  func callback(
+    for property: AudioRouteProperty
+  ) -> (@MainActor @Sendable () -> Void)? {
+    observations.values.first {
+      $0.property == property
+    }?.didChange
   }
 }
 
