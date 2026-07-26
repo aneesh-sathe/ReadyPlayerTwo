@@ -6,6 +6,46 @@ import Testing
 @MainActor
 struct AudioRouteMonitorTests {
   @Test
+  func changedDataSourceOnCurrentDevicePublishesOneRouteEvent()
+    async throws
+  {
+    let initialRoute = AudioRouteSnapshot(
+      inputDevice: AudioDeviceID(17),
+      outputDevice: AudioDeviceID(23),
+      inputDataSource: 41,
+      outputDataSource: 43
+    )
+    let hardware = ScriptedAudioRouteHardware(route: initialRoute)
+    let monitor = CoreAudioRouteMonitor(hardware: hardware)
+    let recorder = AudioRouteEventRecorder()
+    let recording = Task { @MainActor in
+      for await event in monitor.events {
+        recorder.events.append(event)
+      }
+    }
+
+    try monitor.start()
+    hardware.route = AudioRouteSnapshot(
+      inputDevice: AudioDeviceID(17),
+      outputDevice: AudioDeviceID(23),
+      inputDataSource: 47,
+      outputDataSource: 43
+    )
+    hardware.emitChange()
+    hardware.emitChange()
+
+    for _ in 0..<20 where recorder.events.isEmpty {
+      await Task.yield()
+    }
+    recording.cancel()
+    await Task.yield()
+
+    #expect(recorder.events == [.changed])
+
+    monitor.stop()
+  }
+
+  @Test
   func changedDefaultDevicePublishesOneRouteEvent() async throws {
     let initialRoute = AudioRouteSnapshot(
       inputDevice: AudioDeviceID(17),
@@ -28,6 +68,11 @@ struct AudioRouteMonitorTests {
     monitor.stop()
     #expect(hardware.stopCount == 1)
   }
+}
+
+@MainActor
+private final class AudioRouteEventRecorder {
+  var events: [AudioRouteMonitorEvent] = []
 }
 
 @MainActor
