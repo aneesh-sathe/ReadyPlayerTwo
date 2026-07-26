@@ -107,6 +107,319 @@ struct CompanionStageTests {
   }
 
   @Test
+  func roamingAdvancesEveryPlannedStepThenEntersAQuietHold() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let driver = ManualCompanionStageFrameDriver()
+    let selector = ScriptedCompanionStageRoamingIntentSelector(
+      intents: [
+        .climbUp(entryFrom: .right),
+        .walk(.left),
+      ]
+    )
+    let stage = try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(
+        surface: CompanionStageSurface(
+          visibleFrame: NSRect(x: 0, y: 0, width: 1_280, height: 800),
+          scaleFactor: 2
+        )
+      ),
+      frameDriver: driver,
+      roamingIntentSelector: selector,
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+
+    #expect(
+      stage.currentMotionPlan?.states.map(\.rawValue)
+        == ["climb-entry-right", "wall-cling", "climb-up"]
+    )
+    #expect(stage.currentAnimationState == AnimationStateID("climb-entry-right"))
+
+    driver.advance(by: 0.4)
+    #expect(stage.currentAnimationState == AnimationStateID("wall-cling"))
+
+    driver.advance(by: 2.0 / 3.0)
+    #expect(stage.currentAnimationState == AnimationStateID("climb-up"))
+
+    driver.advance(by: 0.8)
+    #expect(stage.currentMotionPlan == nil)
+    #expect(stage.currentAnimationState == AnimationStateID("front-neutral"))
+    #expect(selector.selectionCount == 1)
+
+    driver.advance(by: 2.9)
+    #expect(stage.currentMotionPlan == nil)
+    #expect(selector.selectionCount == 1)
+
+    driver.advance(by: 0.1)
+    #expect(stage.currentMotionPlan?.intent == .walk(.left))
+    #expect(selector.selectionCount == 2)
+  }
+
+  @Test
+  func oneDisplayTickCarriesAcrossMotionPlanStepsWithoutLosingTravel() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let driver = ManualCompanionStageFrameDriver()
+    let stage = try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(
+        surface: CompanionStageSurface(
+          visibleFrame: NSRect(x: 0, y: 0, width: 1_280, height: 800),
+          scaleFactor: 2
+        )
+      ),
+      frameDriver: driver,
+      roamingIntentSelector: ScriptedCompanionStageRoamingIntentSelector(
+        intents: [.land(.right)]
+      ),
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+    driver.advance(by: 0.6)
+
+    #expect(stage.currentAnimationState == AnimationStateID("walk-right"))
+    #expect(abs(stage.characterCenter.x - 649.6) < 0.001)
+    #expect(stage.characterCenter.y == 400)
+  }
+
+  @Test
+  func productionOrionRoamingCompletesItsLegalEdgeSequence() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let driver = ManualCompanionStageFrameDriver()
+    let stageSurface = CompanionStageSurface(
+      visibleFrame: NSRect(x: 0, y: 0, width: 256, height: 400),
+      scaleFactor: 2
+    )
+    let stage = try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(
+        surface: stageSurface
+      ),
+      frameDriver: driver,
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        position: StagePoint(x: 128, y: 200)
+      )
+    )
+    #expect(stage.currentMotionPlan?.intent == .walk(.right))
+
+    driver.advance(by: 4.0 / 3.0)
+    #expect(stage.characterCenter == StagePoint(x: 192, y: 200))
+    #expect(stage.currentMotionPlan == nil)
+    #expect(Self.isFullyVisible(stage, within: stageSurface))
+
+    driver.advance(by: 3)
+    #expect(
+      stage.currentMotionPlan?.intent == .climbUp(entryFrom: .right)
+    )
+    #expect(stage.characterCenter.x == 192)
+    #expect(Self.isFullyVisible(stage, within: stageSurface))
+
+    driver.advance(by: 0.2)
+    #expect(stage.characterCenter.x == 224)
+    #expect(Self.isCenterWithinVisibleFrame(stage, within: stageSurface))
+    driver.advance(by: 0.2)
+    #expect(stage.currentAnimationState == AnimationStateID("wall-cling"))
+    #expect(stage.characterCenter.x == 256)
+    #expect(stage.panel.frame.maxX > 256)
+    #expect(Self.isCenterWithinVisibleFrame(stage, within: stageSurface))
+    driver.advance(by: 2.0 / 3.0)
+    #expect(stage.currentAnimationState == AnimationStateID("climb-up"))
+    #expect(Self.isCenterWithinVisibleFrame(stage, within: stageSurface))
+    driver.advance(by: 0.8)
+    driver.advance(by: 3)
+
+    #expect(stage.currentMotionPlan?.intent == .cling)
+    #expect(stage.currentAnimationState == AnimationStateID("wall-cling"))
+    #expect(Self.isCenterWithinVisibleFrame(stage, within: stageSurface))
+    driver.advance(by: 2.4)
+    driver.advance(by: 3)
+
+    #expect(
+      stage.currentMotionPlan?.intent
+        == .jumpDown(landingToward: .left)
+    )
+    #expect(stage.characterCenter.x == 256)
+    #expect(!Self.isFullyVisible(stage, within: stageSurface))
+
+    driver.advance(by: 1.0 / 3.0)
+    #expect(stage.characterCenter.x == 224)
+    #expect(Self.isCenterWithinVisibleFrame(stage, within: stageSurface))
+    driver.advance(by: 1.0 / 3.0)
+    #expect(stage.currentAnimationState == AnimationStateID("landing-left"))
+    #expect(Self.isFullyVisible(stage, within: stageSurface))
+    let landingCenter = stage.characterCenter
+    driver.advance(by: 0.1)
+    #expect(stage.characterCenter == landingCenter)
+    driver.advance(by: 0.3)
+    driver.advance(by: 3)
+
+    #expect(stage.currentMotionPlan?.intent == .land(.left))
+    driver.advance(by: 0.4)
+    #expect(stage.currentAnimationState == AnimationStateID("walk-left"))
+    #expect(Self.isFullyVisible(stage, within: stageSurface))
+    driver.advance(by: 0.8)
+    driver.advance(by: 3)
+
+    #expect(stage.currentMotionPlan?.intent == .walk(.left))
+    #expect(Self.isFullyVisible(stage, within: stageSurface))
+  }
+
+  @Test
+  func productionAthenaRoamingCompletesItsLegalAirborneSequence() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let driver = ManualCompanionStageFrameDriver()
+    let surface = CompanionStageSurface(
+      visibleFrame: NSRect(x: 0, y: 0, width: 1_280, height: 800),
+      scaleFactor: 2
+    )
+    let stage = try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(surface: surface),
+      frameDriver: driver,
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .athena,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+    #expect(stage.currentMotionPlan?.intent == .walk(.right))
+    #expect(Self.isFullyVisible(stage, within: surface))
+
+    driver.advance(by: 2.4)
+    driver.advance(by: 3)
+    #expect(stage.currentMotionPlan?.intent == .takeoff(.right))
+    driver.advance(by: 0.4)
+    #expect(stage.currentAnimationState == AnimationStateID("hover"))
+    #expect(Self.isFullyVisible(stage, within: surface))
+    driver.advance(by: 2.0 / 3.0)
+    driver.advance(by: 3)
+
+    #expect(stage.currentMotionPlan?.intent == .glide(.up))
+    driver.advance(by: 2.4)
+    #expect(Self.isFullyVisible(stage, within: surface))
+    driver.advance(by: 3)
+
+    #expect(stage.currentMotionPlan?.intent == .hover)
+    driver.advance(by: 2.4)
+    #expect(Self.isFullyVisible(stage, within: surface))
+    driver.advance(by: 3)
+
+    #expect(stage.currentMotionPlan?.intent == .slowDrift(.left))
+    #expect(
+      stage.currentMotionPlan?.steps.map(\.translation)
+        == [
+          .slowAirborneDrift(
+            direction: .left,
+            pointsPerSecond: 12
+          )
+        ]
+    )
+    driver.advance(by: 2.4)
+    #expect(Self.isFullyVisible(stage, within: surface))
+    driver.advance(by: 3)
+
+    #expect(stage.currentMotionPlan?.intent == .glide(.down))
+    driver.advance(by: 2.4)
+    #expect(Self.isFullyVisible(stage, within: surface))
+    driver.advance(by: 3)
+
+    #expect(stage.currentMotionPlan?.intent == .land(.right))
+    driver.advance(by: 0.4)
+    #expect(stage.currentAnimationState == AnimationStateID("right-neutral"))
+    #expect(Self.isFullyVisible(stage, within: surface))
+    driver.advance(by: 1)
+    driver.advance(by: 3)
+
+    #expect(stage.currentMotionPlan?.intent == .walk(.left))
+    #expect(Self.isFullyVisible(stage, within: surface))
+  }
+
+  @Test
+  func conversationInterruptsAnEdgeClimbAtAReachableStablePosition() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let driver = ManualCompanionStageFrameDriver()
+    let surface = CompanionStageSurface(
+      visibleFrame: NSRect(x: 0, y: 0, width: 1_280, height: 800),
+      scaleFactor: 2
+    )
+    let stage = try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(surface: surface),
+      frameDriver: driver,
+      roamingIntentSelector: ScriptedCompanionStageRoamingIntentSelector(
+        intents: [
+          .climbUp(entryFrom: .right),
+          .walk(.left),
+        ]
+      ),
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        position: StagePoint(x: 1_216, y: 400)
+      )
+    )
+    driver.advance(by: 0.4)
+    #expect(stage.currentAnimationState == AnimationStateID("wall-cling"))
+    #expect(!Self.isFullyVisible(stage, within: surface))
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        position: StagePoint(x: 1_216, y: 400),
+        voice: .listening
+      )
+    )
+
+    #expect(stage.currentMotionPlan == nil)
+    #expect(stage.currentAnimationState == AnimationStateID("front-neutral"))
+    #expect(Self.isFullyVisible(stage, within: surface))
+    #expect(!driver.isRunning)
+    let settledCenter = stage.characterCenter
+
+    driver.advance(by: 30)
+    #expect(stage.characterCenter == settledCenter)
+  }
+
+  @Test
   func reduceMotionKeepsRoamingStaticAndFullyVisible() async throws {
     let bundle = Bundle(for: AppDelegate.self)
     let resourceURL = try #require(bundle.resourceURL)
@@ -294,6 +607,27 @@ struct CompanionStageTests {
       recoverableError: nil
     )
   }
+
+  private static func isFullyVisible(
+    _ stage: CompanionStage,
+    within surface: CompanionStageSurface
+  ) -> Bool {
+    let inset = CompanionStage.canvasSize.width / 2
+    return stage.characterCenter.x >= surface.visibleFrame.minX + inset
+      && stage.characterCenter.x <= surface.visibleFrame.maxX - inset
+      && stage.characterCenter.y >= surface.visibleFrame.minY + inset
+      && stage.characterCenter.y <= surface.visibleFrame.maxY - inset
+  }
+
+  private static func isCenterWithinVisibleFrame(
+    _ stage: CompanionStage,
+    within surface: CompanionStageSurface
+  ) -> Bool {
+    stage.characterCenter.x >= surface.visibleFrame.minX
+      && stage.characterCenter.x <= surface.visibleFrame.maxX
+      && stage.characterCenter.y >= surface.visibleFrame.minY
+      && stage.characterCenter.y <= surface.visibleFrame.maxY
+  }
 }
 
 @MainActor
@@ -340,4 +674,26 @@ private struct FixedCompanionStageMotionPreference:
   CompanionStageMotionPreference
 {
   let shouldReduceMotion: Bool
+}
+
+@MainActor
+private final class ScriptedCompanionStageRoamingIntentSelector:
+  CompanionStageRoamingIntentSelecting
+{
+  private let intents: [MotionIntent]
+  private(set) var selectionCount = 0
+
+  init(intents: [MotionIntent]) {
+    self.intents = intents
+  }
+
+  func nextIntent(
+    for _: CompanionAvatar,
+    at _: StagePoint,
+    within _: CompanionStageSurface
+  ) -> MotionIntent {
+    let index = min(selectionCount, intents.count - 1)
+    selectionCount += 1
+    return intents[index]
+  }
 }

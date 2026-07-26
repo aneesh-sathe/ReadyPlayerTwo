@@ -23,8 +23,14 @@ public enum MotionIntent: Equatable, Sendable {
 public enum MotionTranslation: Equatable, Sendable {
   case stationary
   case groundedWalk(direction: HorizontalDirection, pointsPerSecond: Double)
+  case edgeEntry(direction: HorizontalDirection, pointsPerSecond: Double)
   case vertical(direction: VerticalDirection, pointsPerSecond: Double)
   case slowAirborneDrift(direction: HorizontalDirection, pointsPerSecond: Double)
+  case airborneJump(
+    direction: HorizontalDirection,
+    horizontalPointsPerSecond: Double,
+    downwardPointsPerSecond: Double
+  )
 }
 
 public struct MotionPlanStep: Equatable, Sendable {
@@ -129,7 +135,10 @@ public struct MotionPlanner: Sendable {
       [
         StepSpecification(
           state: state("climb-entry", entryDirection),
-          translation: .stationary
+          translation: .edgeEntry(
+            direction: entryDirection,
+            pointsPerSecond: 160
+          )
         ),
         StepSpecification(
           state: AnimationStateID("wall-cling"),
@@ -153,7 +162,11 @@ public struct MotionPlanner: Sendable {
       [
         StepSpecification(
           state: AnimationStateID("jump-down"),
-          translation: .vertical(direction: .down, pointsPerSecond: 64)
+          translation: .airborneJump(
+            direction: landingDirection,
+            horizontalPointsPerSecond: 96,
+            downwardPointsPerSecond: 64
+          )
         ),
         StepSpecification(
           state: state("landing", landingDirection),

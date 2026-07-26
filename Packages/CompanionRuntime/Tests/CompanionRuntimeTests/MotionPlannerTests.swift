@@ -32,6 +32,33 @@ struct MotionPlannerTests {
       #expect(plan.states.allSatisfy { manifest.animations[$0] != nil })
       #expect(plan == (try planner.plan(intent, using: manifest)))
     }
+
+    let jump = try planner.plan(
+      .jumpDown(landingToward: .left),
+      using: manifest
+    )
+    let climb = try planner.plan(
+      .climbUp(entryFrom: .right),
+      using: manifest
+    )
+    #expect(
+      climb.steps.first?.translation
+        == .edgeEntry(
+          direction: .right,
+          pointsPerSecond: 160
+        )
+    )
+    #expect(
+      jump.steps.map(\.translation)
+        == [
+          .airborneJump(
+            direction: .left,
+            horizontalPointsPerSecond: 96,
+            downwardPointsPerSecond: 64
+          ),
+          .stationary,
+        ]
+    )
   }
 
   @Test

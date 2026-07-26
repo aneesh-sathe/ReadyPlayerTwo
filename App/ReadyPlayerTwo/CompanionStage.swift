@@ -100,6 +100,142 @@ protocol CompanionStageMotionPreference {
 }
 
 @MainActor
+protocol CompanionStageRoamingIntentSelecting: AnyObject {
+  func nextIntent(
+    for avatar: CompanionAvatar,
+    at characterCenter: StagePoint,
+    within surface: CompanionStageSurface
+  ) -> MotionIntent
+}
+
+@MainActor
+final class CapabilityCompanionStageRoamingIntentSelector:
+  CompanionStageRoamingIntentSelecting
+{
+  private enum OrionPhase {
+    case approach(HorizontalDirection)
+    case cling(edge: HorizontalDirection)
+    case jump(edge: HorizontalDirection)
+    case land(edge: HorizontalDirection)
+  }
+
+  private enum AthenaPhase {
+    case walk(HorizontalDirection)
+    case takeoff(HorizontalDirection)
+    case glideUp(facing: HorizontalDirection)
+    case hover(facing: HorizontalDirection)
+    case drift(facing: HorizontalDirection)
+    case glideDown(facing: HorizontalDirection)
+    case land(HorizontalDirection)
+  }
+
+  private var orionPhase = OrionPhase.approach(.right)
+  private var athenaPhase = AthenaPhase.walk(.right)
+
+  func nextIntent(
+    for avatar: CompanionAvatar,
+    at characterCenter: StagePoint,
+    within surface: CompanionStageSurface
+  ) -> MotionIntent {
+    switch avatar {
+    case .orion:
+      return nextOrionIntent(
+        at: characterCenter,
+        within: surface
+      )
+    case .athena:
+      return nextAthenaIntent(
+        at: characterCenter,
+        within: surface
+      )
+    }
+  }
+
+  private func nextOrionIntent(
+    at characterCenter: StagePoint,
+    within surface: CompanionStageSurface
+  ) -> MotionIntent {
+    switch orionPhase {
+    case .approach(let direction):
+      guard isAtEdge(direction, characterCenter, surface) else {
+        return .walk(direction)
+      }
+      orionPhase = .cling(edge: direction)
+      return .climbUp(entryFrom: direction)
+
+    case .cling(let edge):
+      orionPhase = .jump(edge: edge)
+      return .cling
+
+    case .jump(let edge):
+      orionPhase = .land(edge: edge)
+      return .jumpDown(landingToward: inwardDirection(from: edge))
+
+    case .land(let edge):
+      let inward = inwardDirection(from: edge)
+      orionPhase = .approach(inward)
+      return .land(inward)
+    }
+  }
+
+  private func nextAthenaIntent(
+    at characterCenter: StagePoint,
+    within surface: CompanionStageSurface
+  ) -> MotionIntent {
+    switch athenaPhase {
+    case .walk(let direction):
+      athenaPhase = .takeoff(direction)
+      return .walk(direction)
+
+    case .takeoff(let direction):
+      athenaPhase = .glideUp(facing: direction)
+      return .takeoff(direction)
+
+    case .glideUp(let facing):
+      athenaPhase = .hover(facing: facing)
+      return .glide(.up)
+
+    case .hover(let facing):
+      athenaPhase = .drift(facing: facing)
+      return .hover
+
+    case .drift(let facing):
+      athenaPhase = .glideDown(facing: facing)
+      let safeDirection: HorizontalDirection =
+        characterCenter.x <= surface.visibleFrame.midX ? .right : .left
+      return .slowDrift(safeDirection)
+
+    case .glideDown(let facing):
+      athenaPhase = .land(facing)
+      return .glide(.down)
+
+    case .land(let direction):
+      athenaPhase = .walk(inwardDirection(from: direction))
+      return .land(direction)
+    }
+  }
+
+  private func isAtEdge(
+    _ direction: HorizontalDirection,
+    _ characterCenter: StagePoint,
+    _ surface: CompanionStageSurface
+  ) -> Bool {
+    let safeInset = CompanionStage.canvasSize.width / 2
+    let target =
+      direction == .left
+      ? surface.visibleFrame.minX + safeInset
+      : surface.visibleFrame.maxX - safeInset
+    return abs(characterCenter.x - target) <= 0.5
+  }
+
+  private func inwardDirection(
+    from edge: HorizontalDirection
+  ) -> HorizontalDirection {
+    edge == .left ? .right : .left
+  }
+}
+
+@MainActor
 struct SystemCompanionStageMotionPreference:
   CompanionStageMotionPreference
 {
@@ -172,6 +308,7 @@ final class CompanionStage: StagePort {
   static let canvasSize = NSSize(width: 128, height: 128)
   private static let roamingBurstDuration = 2.4
   private static let roamingHoldDuration = 3.0
+  private static let clockEpsilon = 0.000_001
 
   let panel: CompanionPanel
   private let renderer: CompanionSpriteRenderer
@@ -179,6 +316,7 @@ final class CompanionStage: StagePort {
   private let terrain: any CompanionStageTerrain
   private let frameDriver: any CompanionStageFrameDriving
   private let motionPreference: any CompanionStageMotionPreference
+  private let roamingIntentSelector: any CompanionStageRoamingIntentSelecting
   private let actions: CompanionStageActions
   private let motionPlanner = MotionPlanner()
   private let panelPresentationEnabled: Bool
@@ -234,6 +372,8 @@ final class CompanionStage: StagePort {
       (any CompanionStageFrameDriving)? = nil,
     motionPreference: any CompanionStageMotionPreference =
       SystemCompanionStageMotionPreference(),
+    roamingIntentSelector: any CompanionStageRoamingIntentSelecting =
+      CapabilityCompanionStageRoamingIntentSelector(),
     actions: CompanionStageActions = CompanionStageActions(),
     panelPresentationEnabled: Bool = true,
     hostsSpriteView: Bool = true
@@ -264,6 +404,7 @@ final class CompanionStage: StagePort {
     manifests = loadedManifests
     self.terrain = terrain
     self.motionPreference = motionPreference
+    self.roamingIntentSelector = roamingIntentSelector
     self.actions = actions
     self.panelPresentationEnabled = panelPresentationEnabled
     renderer = CompanionSpriteRenderer(
@@ -317,12 +458,14 @@ final class CompanionStage: StagePort {
         )
       }
     case .speaking:
+      settleForConversation(snapshot)
       stopMotion()
       showAnimation(
         named: "front-happy",
         avatarChanged: avatarChanged
       )
     case .connecting, .listening, .thinking, .muted, .error, .ending:
+      settleForConversation(snapshot)
       stopMotion()
       showAnimation(
         named: "front-neutral",
@@ -342,6 +485,14 @@ final class CompanionStage: StagePort {
     panel.present(scene: renderer.scene)
     panel.startPointerTracking()
     panel.orderFrontRegardless()
+  }
+
+  private func settleForConversation(_ snapshot: CompanionSnapshot) {
+    characterCenter = clampToSurface(
+      characterCenter,
+      surface: terrain.surface(for: snapshot.placement),
+      horizontalInset: Self.canvasSize.width / 2
+    )
   }
 
   private func startRoamingIfNeeded(avatarChanged: Bool) {
@@ -375,12 +526,19 @@ final class CompanionStage: StagePort {
     }
 
     let surface = terrain.surface(for: snapshot.placement)
-    let midpoint = surface.visibleFrame.midX
-    let direction: HorizontalDirection =
-      characterCenter.x <= midpoint ? .right : .left
+    let intent = roamingIntentSelector.nextIntent(
+      for: snapshot.avatar,
+      at: characterCenter,
+      within: surface
+    )
+    prepareCharacterCenter(
+      for: intent,
+      avatar: snapshot.avatar,
+      surface: surface
+    )
     guard
       let plan = try? motionPlanner.plan(
-        .walk(direction),
+        intent,
         using: manifest
       ),
       let firstStep = plan.steps.first
@@ -410,48 +568,117 @@ final class CompanionStage: StagePort {
       return
     }
 
-    if holdRemaining > 0 {
-      holdRemaining = max(0, holdRemaining - elapsed)
-      if holdRemaining == 0 {
-        beginRoamingPlan()
+    var remaining = elapsed
+    while remaining > Self.clockEpsilon {
+      if holdRemaining > Self.clockEpsilon {
+        let consumed = min(remaining, holdRemaining)
+        holdRemaining -= consumed
+        remaining -= consumed
+        if holdRemaining <= Self.clockEpsilon {
+          holdRemaining = 0
+          beginRoamingPlan()
+        }
+        continue
       }
-      positionPanel()
-      return
-    }
 
-    guard
-      let plan = currentMotionPlan,
-      plan.steps.indices.contains(activeStepIndex)
-    else {
-      beginRoamingPlan()
-      return
-    }
+      guard
+        let plan = currentMotionPlan,
+        plan.steps.indices.contains(activeStepIndex)
+      else {
+        beginRoamingPlan()
+        if currentMotionPlan == nil {
+          break
+        }
+        continue
+      }
 
-    let step = plan.steps[activeStepIndex]
-    apply(step.translation, elapsed: elapsed, snapshot: snapshot)
-    advanceAnimation(by: elapsed)
-    burstElapsed += elapsed
+      let step = plan.steps[activeStepIndex]
+      let stepDuration = roamingDuration(
+        for: step,
+        in: plan,
+        avatar: snapshot.avatar
+      )
+      let stepRemaining = max(0, stepDuration - animationElapsed)
+      let burstRemaining = max(
+        0,
+        Self.roamingBurstDuration - burstElapsed
+      )
+      let consumed = min(remaining, stepRemaining, burstRemaining)
 
-    if burstElapsed >= Self.roamingBurstDuration {
-      currentMotionPlan = nil
-      holdRemaining = Self.roamingHoldDuration
-      showAnimation(named: "front-neutral", avatarChanged: false)
+      guard consumed > Self.clockEpsilon else {
+        finishRoamingPlan()
+        continue
+      }
+
+      let reachedBoundary = apply(
+        step.translation,
+        elapsed: consumed,
+        snapshot: snapshot
+      )
+      advanceAnimation(by: consumed)
+      burstElapsed += consumed
+      remaining -= consumed
+
+      if reachedBoundary
+        || burstElapsed + Self.clockEpsilon >= Self.roamingBurstDuration
+      {
+        finishRoamingPlan()
+        continue
+      }
+
+      if animationElapsed + Self.clockEpsilon >= stepDuration {
+        guard plan.steps.indices.contains(activeStepIndex + 1) else {
+          finishRoamingPlan()
+          continue
+        }
+        activeStepIndex += 1
+        showAnimation(
+          named: plan.steps[activeStepIndex].state.rawValue,
+          avatarChanged: false
+        )
+      }
     }
 
     positionPanel()
+  }
+
+  private func roamingDuration(
+    for step: MotionPlanStep,
+    in plan: MotionPlan,
+    avatar: CompanionAvatar
+  ) -> TimeInterval {
+    guard
+      plan.steps.count == 1,
+      manifests[avatar]?.animations[step.state]?.loops == true
+    else {
+      return step.durationSeconds
+    }
+    return Self.roamingBurstDuration
+  }
+
+  private func finishRoamingPlan() {
+    if currentMotionPlan != nil {
+      currentMotionPlan = nil
+      activeStepIndex = 0
+      animationElapsed = 0
+      burstElapsed = 0
+      holdRemaining = Self.roamingHoldDuration
+      showAnimation(named: "front-neutral", avatarChanged: false)
+    }
   }
 
   private func apply(
     _ translation: MotionTranslation,
     elapsed: TimeInterval,
     snapshot: CompanionSnapshot
-  ) {
+  ) -> Bool {
     var translated = characterCenter
 
     switch translation {
     case .stationary:
       break
-    case .groundedWalk(let direction, let pointsPerSecond):
+    case .groundedWalk(let direction, let pointsPerSecond),
+      .edgeEntry(let direction, let pointsPerSecond):
       let sign = direction == .left ? -1.0 : 1.0
       translated.x += sign * pointsPerSecond * elapsed
     case .vertical(let direction, let pointsPerSecond):
@@ -460,25 +687,152 @@ final class CompanionStage: StagePort {
     case .slowAirborneDrift(let direction, let pointsPerSecond):
       let sign = direction == .left ? -1.0 : 1.0
       translated.x += sign * pointsPerSecond * elapsed
+    case .airborneJump(
+      let direction,
+      let horizontalPointsPerSecond,
+      let downwardPointsPerSecond
+    ):
+      let sign = direction == .left ? -1.0 : 1.0
+      translated.x += sign * horizontalPointsPerSecond * elapsed
+      translated.y -= downwardPointsPerSecond * elapsed
     }
 
     let surface = terrain.surface(for: snapshot.placement)
-    let clamped = StageRect(
-      origin: StagePoint(
-        x: surface.visibleFrame.origin.x,
-        y: surface.visibleFrame.origin.y
-      ),
-      size: StageSize(
-        width: surface.visibleFrame.width,
-        height: surface.visibleFrame.height
-      )
-    ).clamped(translated, inset: Self.canvasSize.width / 2)
+    let horizontalInset =
+      usesOrionEdgeBounds ? 0 : Self.canvasSize.width / 2
+    let clamped = clampToSurface(
+      translated,
+      surface: surface,
+      horizontalInset: horizontalInset
+    )
 
-    if clamped != translated {
-      currentMotionPlan = nil
-      holdRemaining = 0
-    }
     characterCenter = clamped
+    return clamped != translated
+      || reachesSurfaceBoundary(
+        translation,
+        point: clamped,
+        surface: surface,
+        horizontalInset: horizontalInset
+      )
+  }
+
+  private var usesOrionEdgeBounds: Bool {
+    guard let intent = currentMotionPlan?.intent else {
+      return false
+    }
+    return usesOrionEdgeBounds(
+      for: intent,
+      avatar: presentedAvatar
+    )
+  }
+
+  private func prepareCharacterCenter(
+    for intent: MotionIntent,
+    avatar: CompanionAvatar,
+    surface: CompanionStageSurface
+  ) {
+    let safeInset = Self.canvasSize.width / 2
+    let horizontalInset =
+      usesOrionEdgeBounds(for: intent, avatar: avatar)
+      ? 0
+      : safeInset
+    characterCenter = clampToSurface(
+      characterCenter,
+      surface: surface,
+      horizontalInset: horizontalInset
+    )
+
+    guard avatar == .orion else {
+      return
+    }
+    switch intent {
+    case .cling:
+      let distanceFromLeft = abs(
+        characterCenter.x - surface.visibleFrame.minX
+      )
+      let distanceFromRight = abs(
+        surface.visibleFrame.maxX - characterCenter.x
+      )
+      characterCenter.x =
+        distanceFromLeft <= distanceFromRight
+        ? surface.visibleFrame.minX
+        : surface.visibleFrame.maxX
+    default:
+      break
+    }
+  }
+
+  private func usesOrionEdgeBounds(
+    for intent: MotionIntent,
+    avatar: CompanionAvatar
+  ) -> Bool {
+    guard avatar == .orion else {
+      return false
+    }
+    switch intent {
+    case .climbUp, .cling, .jumpDown:
+      return true
+    default:
+      return false
+    }
+  }
+
+  private func clampToSurface(
+    _ point: StagePoint,
+    surface: CompanionStageSurface,
+    horizontalInset: Double
+  ) -> StagePoint {
+    let verticalInset = Self.canvasSize.height / 2
+    let minimumX = surface.visibleFrame.minX + horizontalInset
+    let maximumX = max(
+      minimumX,
+      surface.visibleFrame.maxX - horizontalInset
+    )
+    let minimumY = surface.visibleFrame.minY + verticalInset
+    let maximumY = max(
+      minimumY,
+      surface.visibleFrame.maxY - verticalInset
+    )
+
+    return StagePoint(
+      x: min(max(point.x, minimumX), maximumX),
+      y: min(max(point.y, minimumY), maximumY)
+    )
+  }
+
+  private func reachesSurfaceBoundary(
+    _ translation: MotionTranslation,
+    point: StagePoint,
+    surface: CompanionStageSurface,
+    horizontalInset: Double
+  ) -> Bool {
+    let left = surface.visibleFrame.minX + horizontalInset
+    let right = surface.visibleFrame.maxX - horizontalInset
+    let bottom = surface.visibleFrame.minY + Self.canvasSize.height / 2
+    let top = surface.visibleFrame.maxY - Self.canvasSize.height / 2
+
+    switch translation {
+    case .stationary:
+      return false
+    case .edgeEntry:
+      return false
+    case .groundedWalk(let direction, _),
+      .slowAirborneDrift(let direction, _):
+      return direction == .left
+        ? abs(point.x - left) <= Self.clockEpsilon
+        : abs(point.x - right) <= Self.clockEpsilon
+    case .vertical(let direction, _):
+      return direction == .down
+        ? abs(point.y - bottom) <= Self.clockEpsilon
+        : abs(point.y - top) <= Self.clockEpsilon
+    case .airborneJump(let direction, _, _):
+      let horizontalBoundaryReached =
+        direction == .left
+        ? abs(point.x - left) <= Self.clockEpsilon
+        : abs(point.x - right) <= Self.clockEpsilon
+      return horizontalBoundaryReached
+        || abs(point.y - bottom) <= Self.clockEpsilon
+    }
   }
 
   private func advanceAnimation(by elapsed: TimeInterval) {
