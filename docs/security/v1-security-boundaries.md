@@ -60,8 +60,10 @@ client.
    `POST /v1/realtime/client-secret` over loopback HTTP, authenticated by the
    per-launch bearer.
 9. The broker hashes and timing-safely compares the bearer, verifies the model
-   is `gpt-realtime-2.1` and the voice is `marin`, then sends the standard key
-   only to OpenAI's client-secret endpoint in an HTTPS Authorization header.
+   is exactly `gpt-realtime-2.1`, and verifies the voice is `alloy`, `ash`,
+   `ballad`, `coral`, `echo`, `sage`, `shimmer`, `verse`, `marin`, or `cedar`.
+   It then sends the standard key only to OpenAI's client-secret endpoint in
+   an HTTPS Authorization header.
 10. The broker returns only the ephemeral secret value and expiration time,
     with `Cache-Control: no-store`.
 11. The app constructs the WebRTC factory, microphone audio track, peer
@@ -206,6 +208,9 @@ zero-retention or provider-deletion claim.
 | --- | --- |
 | Microphone denial | No WebRTC objects are constructed; Connecting changes to a recoverable error; microphone remains off. |
 | Missing broker configuration or secret-fetch failure | No WebRTC transport starts; the runtime exposes an error and requires explicit Retry. |
+| OpenAI client-secret authentication failure | The broker discards the upstream body and normalizes an upstream 401 or 403 to status 401 with `upstream_authentication_failed`. |
+| OpenAI client-secret rate limit | The broker discards the upstream body and returns status 429 with `upstream_rate_limited`. |
+| Other OpenAI response or broker-to-provider network failure | The broker exposes no upstream body or exception text and returns status 502 with `upstream_unavailable`. |
 | SDP, data-channel, peer, server, or network failure | Local audio is disabled; statistics stop; channel and peer close; error remains nonspoken and recoverable. |
 | End, Hide during voice, platform suppression, or inactivity timeout | Runtime enters Ending, invokes voice stop once for that active generation, and returns to a non-listening state. |
 | Sleep, lock, screen saver, or Mission Control | Stage is suppressed and active voice ends. A later platform resume does not restart voice. |
