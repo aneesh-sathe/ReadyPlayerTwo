@@ -237,3 +237,36 @@ rpt_soak_rss_growth_is_unbounded() {
   (( last_rss_kib - first_rss_kib >= 32768 &&
     increasing_intervals >= 9 ))
 }
+
+rpt_soak_cpu_window_exceeds_limit() {
+  local cpu_limit_percent="$1"
+  shift
+  local -a cpu_samples
+  cpu_samples=("$@")
+
+  if [[ ! "$cpu_limit_percent" =~ '^[0-9]+([.][0-9]+)?$' ]]; then
+    rpt_die "The soak CPU limit is invalid."
+    return
+  fi
+  if (( ${#cpu_samples} < 12 )); then
+    return 1
+  fi
+
+  local first_index=$(( ${#cpu_samples} - 11 ))
+  integer sample_index
+  typeset -F 3 cpu_total=0
+  local cpu_percent
+  for ((sample_index = first_index;
+    sample_index <= ${#cpu_samples};
+    sample_index += 1)); do
+    cpu_percent="$cpu_samples[$sample_index]"
+    if [[ ! "$cpu_percent" =~ '^[0-9]+([.][0-9]+)?$' ]]; then
+      rpt_die "A CPU sample is invalid."
+      return
+    fi
+    cpu_total=$(( cpu_total + cpu_percent ))
+  done
+
+  typeset -F 3 cpu_average=$(( cpu_total / 12 ))
+  (( cpu_average >= cpu_limit_percent ))
+}
