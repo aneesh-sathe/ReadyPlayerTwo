@@ -243,6 +243,35 @@ struct AudioRouteMonitorTests {
   }
 
   @Test
+  func changedOutputSourceOnCurrentDevicePublishesRouteEvent()
+    async throws
+  {
+    let hardware = ScriptedAudioRouteHardware(
+      route: AudioRouteSnapshot(
+        inputDevice: AudioDeviceID(17),
+        outputDevice: AudioDeviceID(23),
+        inputDataSource: 41,
+        outputDataSource: 43
+      )
+    )
+    let monitor = CoreAudioRouteMonitor(hardware: hardware)
+    var events = monitor.events.makeAsyncIterator()
+
+    try monitor.start()
+    hardware.route = AudioRouteSnapshot(
+      inputDevice: AudioDeviceID(17),
+      outputDevice: AudioDeviceID(23),
+      inputDataSource: 41,
+      outputDataSource: 53
+    )
+    hardware.emitChange()
+
+    #expect(await events.next() == .changed)
+
+    monitor.stop()
+  }
+
+  @Test
   func changedDefaultDevicePublishesOneRouteEvent() async throws {
     let initialRoute = AudioRouteSnapshot(
       inputDevice: AudioDeviceID(17),
