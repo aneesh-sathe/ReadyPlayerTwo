@@ -59,3 +59,40 @@ rpt_soak_sample_process() {
     "$cpu_percent" \
     "$rss_kib"
 }
+
+rpt_soak_verify_lineage() {
+  local launcher_pid="$1"
+  local broker_pid="$2"
+  local app_pid="$3"
+
+  if [[ "$launcher_pid" != <1-> ||
+    "$broker_pid" != <1-> ||
+    "$app_pid" != <1-> ||
+    "$launcher_pid" == "$broker_pid" ||
+    "$launcher_pid" == "$app_pid" ||
+    "$broker_pid" == "$app_pid" ]]; then
+    rpt_die "The soak requires three distinct positive process identifiers."
+    return
+  fi
+
+  local launcher_sample
+  local broker_sample
+  local app_sample
+  launcher_sample="$(rpt_soak_sample_process "$launcher_pid")" || return
+  broker_sample="$(rpt_soak_sample_process "$broker_pid")" || return
+  app_sample="$(rpt_soak_sample_process "$app_pid")" || return
+
+  local -a broker_fields
+  local -a app_fields
+  broker_fields=("${(@s: :)broker_sample}")
+  app_fields=("${(@s: :)app_sample}")
+
+  if [[ "$broker_fields[2]" != "$launcher_pid" ]]; then
+    rpt_die "The monitored broker is no longer owned by the launcher."
+    return
+  fi
+  if [[ "$app_fields[2]" != "$launcher_pid" ]]; then
+    rpt_die "The monitored app is no longer owned by the launcher."
+    return
+  fi
+}
