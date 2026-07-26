@@ -154,3 +154,33 @@ rpt_soak_unexpected_children() {
       LC_ALL=C /usr/bin/sort -n -u
   fi
 }
+
+rpt_soak_persistent_unexpected_children() {
+  local previous_children="$1"
+  local current_children="$2"
+
+  if [[ -z "$previous_children" || -z "$current_children" ]]; then
+    return
+  fi
+
+  local -A previous_identifiers
+  previous_identifiers=()
+  local child_pid
+  for child_pid in "${(@f)previous_children}"; do
+    if [[ "$child_pid" != <1-> ]]; then
+      rpt_die "A previous unexpected child identifier is invalid."
+      return
+    fi
+    previous_identifiers[$child_pid]=1
+  done
+
+  for child_pid in "${(@f)current_children}"; do
+    if [[ "$child_pid" != <1-> ]]; then
+      rpt_die "A current unexpected child identifier is invalid."
+      return
+    fi
+    if [[ -n "${previous_identifiers[$child_pid]:-}" ]]; then
+      printf '%s\n' "$child_pid"
+    fi
+  done
+}
