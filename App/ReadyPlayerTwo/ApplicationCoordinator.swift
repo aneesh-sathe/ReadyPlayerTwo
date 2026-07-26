@@ -44,6 +44,7 @@ final class ApplicationCoordinator {
   private let runtime: any CompanionCommandRouting
   private let statusMenu: any StatusMenuPresenting
   private let application: any ApplicationTerminating
+  private let conversationPresenter: (any ConversationPresenting)?
   private let preferencesStore: (any InterfacePreferencesStoring)?
   private var hasStarted = false
   private var latestSnapshot: CompanionSnapshot?
@@ -54,12 +55,14 @@ final class ApplicationCoordinator {
     runtime: any CompanionCommandRouting,
     statusMenu: any StatusMenuPresenting,
     application: any ApplicationTerminating,
+    conversationPresenter: (any ConversationPresenting)? = nil,
     preferencesStore: (any InterfacePreferencesStoring)? = nil,
     initialPreferences: LocalInterfacePreferences? = nil
   ) {
     self.runtime = runtime
     self.statusMenu = statusMenu
     self.application = application
+    self.conversationPresenter = conversationPresenter
     self.preferencesStore = preferencesStore
     persistedPreferences =
       initialPreferences
@@ -138,6 +141,7 @@ final class ApplicationCoordinator {
         }
         latestSnapshot = snapshot
         statusMenu.render(snapshot)
+        conversationPresenter?.render(snapshot)
         persistInterfacePreferences(from: snapshot)
       }
     }

@@ -2,17 +2,64 @@ import AppKit
 import CompanionRuntime
 
 @MainActor
-final class ConversationPanelController {
+protocol ConversationPresenting: AnyObject {
+  func render(_ snapshot: CompanionSnapshot)
+}
+
+@MainActor
+protocol ConversationVisibleFrameResolving {
+  func visibleFrame(for placement: CompanionPlacement) -> StageRect
+}
+
+@MainActor
+struct ScreenConversationVisibleFrameResolver:
+  ConversationVisibleFrameResolving
+{
+  func visibleFrame(for placement: CompanionPlacement) -> StageRect {
+    let point = NSPoint(
+      x: placement.position.x,
+      y: placement.position.y
+    )
+    let screen =
+      NSScreen.screens.first(where: {
+        let number =
+          $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+          as? NSNumber
+        return number?.stringValue == placement.displayID
+      })
+      ?? NSScreen.screens.first(where: {
+        NSMouseInRect(point, $0.frame, false)
+      })
+      ?? NSScreen.main
+      ?? NSScreen.screens.first
+
+    guard let screen else {
+      return CompanionDisplay.main.visibleFrame
+    }
+
+    let frame = screen.visibleFrame
+    return StageRect(
+      origin: StagePoint(x: frame.origin.x, y: frame.origin.y),
+      size: StageSize(width: frame.width, height: frame.height)
+    )
+  }
+}
+
+@MainActor
+final class ConversationPanelController: ConversationPresenting {
   fileprivate static let bubbleSize = NSSize(width: 320, height: 104)
   private static let companionSize = 128.0
   private static let bubbleGap = 12.0
 
   let panel: NSPanel
   private let bubbleView: ConversationBubbleView
+  private let visibleFrameResolver: any ConversationVisibleFrameResolving
 
   init(
     actions: ConversationBubbleActions,
-    waveformAnimationDriver: (any WaveformAnimationDriving)? = nil
+    waveformAnimationDriver: (any WaveformAnimationDriving)? = nil,
+    visibleFrameResolver: any ConversationVisibleFrameResolving =
+      ScreenConversationVisibleFrameResolver()
   ) {
     let bubbleView =
       if let waveformAnimationDriver {
@@ -24,7 +71,19 @@ final class ConversationPanelController {
         ConversationBubbleView(actions: actions)
       }
     self.bubbleView = bubbleView
+    self.visibleFrameResolver = visibleFrameResolver
     panel = ConversationPanel(contentView: bubbleView)
+  }
+
+  func render(_ snapshot: CompanionSnapshot) {
+    render(
+      state: snapshot.bubble,
+      waveformEnergy: snapshot.waveformEnergy,
+      companionCenter: snapshot.placement.position,
+      visibleFrame: visibleFrameResolver.visibleFrame(
+        for: snapshot.placement
+      )
+    )
   }
 
   func render(

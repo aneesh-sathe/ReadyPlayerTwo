@@ -8,6 +8,48 @@ import Testing
 @MainActor
 struct ConversationPanelControllerTests {
   @Test
+  func runtimeSnapshotUsesItsPlacementDisplayVisibleFrame() {
+    let visibleFrame = StageRect(
+      origin: StagePoint(x: -1_440, y: 25),
+      size: StageSize(width: 1_440, height: 850)
+    )
+    let resolver = PanelVisibleFrameResolver(visibleFrame: visibleFrame)
+    let controller = ConversationPanelController(
+      actions: ConversationBubbleActions(
+        setMuted: { _ in },
+        retry: {},
+        end: {}
+      ),
+      waveformAnimationDriver: PanelWaveformAnimationDriver(),
+      visibleFrameResolver: resolver
+    )
+    let snapshot = CompanionSnapshot(
+      avatar: .athena,
+      basePresence: .parked,
+      isVisible: true,
+      placement: CompanionPlacement(
+        displayID: "external",
+        position: StagePoint(x: -200, y: 850)
+      ),
+      voice: .speaking,
+      bubble: .speaking,
+      waveformEnergy: 0.8,
+      recoverableError: nil
+    )
+
+    controller.render(snapshot)
+    defer {
+      controller.panel.orderOut(nil)
+    }
+
+    #expect(resolver.placements == [snapshot.placement])
+    #expect(
+      controller.panel.frame
+        == NSRect(x: -596, y: 771, width: 320, height: 104)
+    )
+  }
+
+  @Test
   func visibleConversationAppearsBesideTheCompanion() throws {
     let controller = ConversationPanelController(
       actions: ConversationBubbleActions(
@@ -301,4 +343,21 @@ private final class PanelWaveformAnimationDriver:
   func start(onTick _: @escaping @MainActor () -> Void) {}
 
   func stop() {}
+}
+
+@MainActor
+private final class PanelVisibleFrameResolver:
+  ConversationVisibleFrameResolving
+{
+  let visibleFrame: StageRect
+  private(set) var placements: [CompanionPlacement] = []
+
+  init(visibleFrame: StageRect) {
+    self.visibleFrame = visibleFrame
+  }
+
+  func visibleFrame(for placement: CompanionPlacement) -> StageRect {
+    placements.append(placement)
+    return visibleFrame
+  }
 }

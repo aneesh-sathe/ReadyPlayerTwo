@@ -34,10 +34,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       clock: SystemRuntimeClock(),
       randomness: SystemRandomSource()
     )
+    let conversationPresenter = ConversationPanelController(
+      actions: ConversationBubbleActions(
+        setMuted: { isMuted in
+          Task {
+            await runtime.send(.setMuted(isMuted))
+          }
+        },
+        retry: {
+          Task {
+            await runtime.send(.retryConversation)
+          }
+        },
+        end: {
+          Task {
+            await runtime.send(.endConversation)
+          }
+        }
+      )
+    )
     let coordinator = ApplicationCoordinator(
       runtime: runtime,
       statusMenu: StatusMenuController(),
       application: NSApplication.shared,
+      conversationPresenter: conversationPresenter,
       preferencesStore: preferencesStore,
       initialPreferences: preferences
     )

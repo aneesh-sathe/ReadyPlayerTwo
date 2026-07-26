@@ -88,10 +88,12 @@ struct ApplicationCoordinatorTests {
   func menuRendersSnapshotsAndRetriesOnlyAfterAnError() async throws {
     let runtime = RecordingRuntime()
     let statusMenu = RecordingStatusMenu()
+    let conversationPresenter = RecordingConversationPresenter()
     let coordinator = ApplicationCoordinator(
       runtime: runtime,
       statusMenu: statusMenu,
-      application: RecordingApplication()
+      application: RecordingApplication(),
+      conversationPresenter: conversationPresenter
     )
 
     await coordinator.start()
@@ -111,6 +113,7 @@ struct ApplicationCoordinatorTests {
     await drainTasks()
 
     #expect(statusMenu.renderedSnapshots == [failed])
+    #expect(conversationPresenter.renderedSnapshots == [failed])
 
     await actions.summonOrEnd()
     await actions.roam()
@@ -233,6 +236,15 @@ private final class RecordingStatusMenu: StatusMenuPresenting {
     self.actions = actions
     installCount += 1
   }
+
+  func render(_ snapshot: CompanionSnapshot) {
+    renderedSnapshots.append(snapshot)
+  }
+}
+
+@MainActor
+private final class RecordingConversationPresenter: ConversationPresenting {
+  private(set) var renderedSnapshots: [CompanionSnapshot] = []
 
   func render(_ snapshot: CompanionSnapshot) {
     renderedSnapshots.append(snapshot)
