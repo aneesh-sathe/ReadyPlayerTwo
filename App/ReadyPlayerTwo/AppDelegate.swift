@@ -81,10 +81,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferencesStore: preferencesStore,
         onShortcutInvocation: shortcutInvocation
       )
+    let voiceSettings = VoiceSettingsPopoverController(
+      preferencesStore: preferencesStore,
+      openSoundSettings: {
+        guard
+          let url = URL(
+            string:
+              "x-apple.systempreferences:com.apple.Sound-Settings.extension"
+          )
+        else {
+          return
+        }
+        NSWorkspace.shared.open(url)
+      }
+    )
     let coordinator = ApplicationCoordinator(
       runtime: runtime,
       statusMenu: StatusMenuController(
-        shortcutSettingsPresenter: shortcutSettings
+        shortcutSettingsPresenter: shortcutSettings,
+        voiceSettingsPresenter: voiceSettings
       ),
       application: NSApplication.shared,
       conversationPresenter: conversationPresenter,
