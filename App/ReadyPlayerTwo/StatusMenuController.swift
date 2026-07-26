@@ -120,6 +120,7 @@ struct StatusMenuPresentation: Equatable {
 @MainActor
 final class StatusMenuController: NSObject, StatusMenuPresenting {
   private let shortcutSettingsPresenter: (any ShortcutSettingsPresenting)?
+  private let voiceSettingsPresenter: (any VoiceSettingsPresenting)?
   private var actions: StatusMenuActions?
   private var statusItem: NSStatusItem?
   private var conversationItem: NSMenuItem?
@@ -141,9 +142,12 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
 
   init(
     shortcutSettingsPresenter:
-      (any ShortcutSettingsPresenting)? = nil
+      (any ShortcutSettingsPresenting)? = nil,
+    voiceSettingsPresenter:
+      (any VoiceSettingsPresenting)? = nil
   ) {
     self.shortcutSettingsPresenter = shortcutSettingsPresenter
+    self.voiceSettingsPresenter = voiceSettingsPresenter
     super.init()
   }
 
@@ -229,6 +233,11 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
       title: "Keyboard Shortcut…",
       action: #selector(showShortcutSettings)
     )
+    _ = addItem(
+      to: menu,
+      title: "Voice Settings…",
+      action: #selector(showVoiceSettings)
+    )
 
     let diagnosticsItem = NSMenuItem(
       title: "Diagnostics",
@@ -237,7 +246,7 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     )
     let diagnosticsMenu = NSMenu(title: "Diagnostics")
     voiceDiagnosticItem = NSMenuItem(
-      title: "Voice: Starting",
+      title: voiceReadiness.idleVoiceDescription,
       action: nil,
       keyEquivalent: ""
     )
@@ -411,6 +420,20 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     }
 
     shortcutSettingsPresenter.show(
+      relativeTo: positioningView
+    )
+  }
+
+  @objc
+  private func showVoiceSettings() {
+    guard
+      let positioningView = statusItem?.button,
+      let voiceSettingsPresenter
+    else {
+      return
+    }
+
+    voiceSettingsPresenter.show(
       relativeTo: positioningView
     )
   }

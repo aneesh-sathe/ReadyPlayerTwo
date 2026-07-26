@@ -26,13 +26,18 @@ struct StatusMenuPresentationTests {
       controller.uninstall()
     }
 
-    controller.renderVoiceReadiness(.ready)
-
     let menu = try #require(controller.installedMenu)
     let diagnostics = try #require(
       menu.items.first(where: { $0.title == "Diagnostics" })?
         .submenu
     )
+    let initialTitles = diagnostics.items.map(\.title)
+
+    #expect(initialTitles.contains("Voice: Checking"))
+    #expect(!initialTitles.contains("Voice: Starting"))
+
+    controller.renderVoiceReadiness(.ready)
+
     let titles = diagnostics.items.map(\.title)
 
     #expect(titles.contains("Voice: Ready"))
@@ -70,6 +75,51 @@ struct StatusMenuPresentationTests {
     let item = try #require(
       menu.items.first(where: {
         $0.title == "Keyboard Shortcut…"
+      })
+    )
+
+    let action = try #require(item.action)
+    #expect(
+      NSApp.sendAction(
+        action,
+        to: item.target,
+        from: item
+      )
+    )
+
+    #expect(presenter.positioningViews.count == 1)
+    #expect(
+      presenter.positioningViews.first is NSStatusBarButton
+    )
+  }
+
+  @Test
+  @MainActor
+  func statusMenuExposesAnchoredVoiceSettings() throws {
+    let presenter = RecordingVoiceSettingsPresenter()
+    let controller = StatusMenuController(
+      voiceSettingsPresenter: presenter
+    )
+    controller.install(
+      actions: StatusMenuActions(
+        summonOrEnd: {},
+        roam: {},
+        park: {},
+        hideOrShow: {},
+        selectAvatar: { _ in },
+        moveToCurrentDisplay: {},
+        muteOrUnmute: {},
+        quit: {}
+      )
+    )
+    defer {
+      controller.uninstall()
+    }
+
+    let menu = try #require(controller.installedMenu)
+    let item = try #require(
+      menu.items.first(where: {
+        $0.title == "Voice Settings…"
       })
     )
 
@@ -181,6 +231,17 @@ struct StatusMenuPresentationTests {
 @MainActor
 private final class RecordingShortcutSettingsPresenter:
   ShortcutSettingsPresenting
+{
+  private(set) var positioningViews: [NSView] = []
+
+  func show(relativeTo positioningView: NSView) {
+    positioningViews.append(positioningView)
+  }
+}
+
+@MainActor
+private final class RecordingVoiceSettingsPresenter:
+  VoiceSettingsPresenting
 {
   private(set) var positioningViews: [NSView] = []
 
