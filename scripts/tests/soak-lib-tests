@@ -5,6 +5,18 @@ set -euo pipefail
 source "${0:A:h:h}/lib.zsh"
 source "${0:A:h:h}/soak-lib.zsh"
 
+integer sampled_process_pid=0
+
+cleanup() {
+  if (( sampled_process_pid > 0 )) &&
+    kill -0 "$sampled_process_pid" 2>/dev/null; then
+    kill -TERM "$sampled_process_pid" 2>/dev/null || true
+    wait "$sampled_process_pid" 2>/dev/null || true
+  fi
+}
+
+trap cleanup EXIT
+
 unset RPT_SOAK_DURATION_SECONDS
 default_duration="$(rpt_soak_duration_seconds)"
 [[ "$default_duration" == "7200" ]] ||
@@ -19,5 +31,20 @@ RPT_SOAK_DURATION_SECONDS=0
 if rpt_soak_duration_seconds >/dev/null 2>&1; then
   rpt_die "A non-positive soak duration must be rejected."
 fi
+
+/bin/sleep 30 &
+sampled_process_pid=$!
+process_sample="$(rpt_soak_sample_process "$sampled_process_pid")"
+sample_fields=("${(@s: :)process_sample}")
+[[ "${#sample_fields}" == "4" ]] ||
+  rpt_die "A process sample must contain PID, parent PID, CPU, and RSS."
+[[ "$sample_fields[1]" == "$sampled_process_pid" ]] ||
+  rpt_die "A process sample must identify the exact requested PID."
+[[ "$sample_fields[2]" == <1-> ]] ||
+  rpt_die "A process sample must contain a positive parent PID."
+[[ "$sample_fields[3]" == <0->(|.<0->) ]] ||
+  rpt_die "A process sample must contain a non-negative CPU percentage."
+[[ "$sample_fields[4]" == <1-> ]] ||
+  rpt_die "A process sample must contain positive RSS in KiB."
 
 rpt_note "Soak library tests passed."
