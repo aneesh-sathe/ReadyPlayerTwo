@@ -124,6 +124,7 @@
 - Support one Companion across connected displays. Autonomous roaming stays on one display; Summon or Move to Current Display relocates it.
 - Use a 128-point sprite canvas as the initial visual scale and device-pixel-align movement.
 - Store only local interface preferences such as character, presence mode, shortcut, voice, volume, and safe position.
+- AppKit exposes no public Mission Control start or end notification. Treat public active Space changes as placement refreshes only and never synthesize Mission Control lifecycle events.
 
 ## Verified Development Environment
 
