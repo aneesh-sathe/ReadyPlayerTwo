@@ -1,0 +1,12 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "${0:A:h:h}/lib.zsh"
+
+swift_source_paths="$(rpt_local_swift_source_paths)"
+[[ $'\n'"$swift_source_paths"$'\n' ==
+  *$'\n'"$RPT_ROOT/App/ReadyPlayerTwoUITests"$'\n'* ]] ||
+  rpt_die "The authoritative lint gate must include packaged UI test sources."
+
+rpt_note "Test gate tests passed."
