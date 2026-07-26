@@ -321,15 +321,15 @@ struct CompanionStageTests {
 
     edgeDriver.advance(by: 0.4)
     #expect(edgeStage.currentAnimationState == AnimationStateID("wall-cling"))
-    #expect(edgeStage.lastCrossfadeDuration == 0.1)
+    #expect(edgeStage.lastCrossfadeDuration == 0.15)
 
     edgeDriver.advance(by: 2.0 / 3.0)
     #expect(edgeStage.currentAnimationState == AnimationStateID("climb-up"))
-    #expect(edgeStage.lastCrossfadeDuration == 0.1)
+    #expect(edgeStage.lastCrossfadeDuration == 0.15)
 
     edgeDriver.advance(by: 0.8)
     #expect(edgeStage.currentAnimationState == AnimationStateID("wall-cling"))
-    #expect(edgeStage.lastCrossfadeDuration == 0.1)
+    #expect(edgeStage.lastCrossfadeDuration == 0.15)
 
     let takeoffDriver = ManualCompanionStageFrameDriver()
     let takeoffStage = try Self.scriptedRoamingStage(
@@ -350,7 +350,7 @@ struct CompanionStageTests {
     #expect(
       takeoffStage.currentAnimationState == AnimationStateID("hover")
     )
-    #expect(takeoffStage.lastCrossfadeDuration == 0.1)
+    #expect(takeoffStage.lastCrossfadeDuration == 0.15)
 
     takeoffDriver.advance(by: 2.0 / 3.0)
     #expect(
@@ -374,7 +374,7 @@ struct CompanionStageTests {
     glideDriver.advance(by: 2.4)
 
     #expect(glideStage.currentAnimationState == AnimationStateID("hover"))
-    #expect(glideStage.lastCrossfadeDuration == 0.1)
+    #expect(glideStage.lastCrossfadeDuration == 0.15)
   }
 
   @Test

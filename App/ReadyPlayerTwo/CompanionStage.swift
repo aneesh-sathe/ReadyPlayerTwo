@@ -350,7 +350,7 @@ final class CompanionStage: StagePort {
   static let canvasSize = NSSize(width: 128, height: 128)
   private static let roamingBurstDuration = 2.4
   private static let roamingHoldDuration = 3.0
-  private static let poseCrossfadeDuration = 0.1
+  private static let poseCrossfadeDuration = 0.15
   private static let relocationFadePhaseDuration = 0.1
   private static let clockEpsilon = 0.000_001
 
