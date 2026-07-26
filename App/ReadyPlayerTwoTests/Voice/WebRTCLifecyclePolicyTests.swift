@@ -4,10 +4,17 @@ import Testing
 @testable import ReadyPlayerTwo
 
 struct WebRTCLifecyclePolicyTests {
-  @Test
-  func disconnectedPeerBecomesRecoverableVoiceFailure() {
+  @Test(
+    arguments: [
+      WebRTCLifecycleSignal.peerDisconnected,
+      WebRTCLifecycleSignal.iceDisconnected,
+    ]
+  )
+  func disconnectedTransportBecomesRecoverableVoiceFailure(
+    signal: WebRTCLifecycleSignal
+  ) {
     let failure = WebRTCLifecyclePolicy.failure(
-      for: .peerDisconnected
+      for: signal
     )
 
     #expect(
