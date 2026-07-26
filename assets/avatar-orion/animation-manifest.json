@@ -1,0 +1,218 @@
+{
+  "character": "warrior-avatar",
+  "canvas": {
+    "width": 512,
+    "height": 512,
+    "format": "RGBA PNG"
+  },
+  "anchors": {
+    "grounded": {
+      "x": 256,
+      "y": 500
+    },
+    "airborneOrWall": {
+      "x": 256,
+      "y": 256
+    }
+  },
+  "states": {
+    "front-neutral": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-front-neutral.png"
+      ]
+    },
+    "back-neutral": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-back-neutral.png"
+      ]
+    },
+    "left-neutral": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-left-neutral.png"
+      ]
+    },
+    "right-neutral": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-right-neutral.png"
+      ]
+    },
+    "front-happy": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-front-happy.png"
+      ]
+    },
+    "back-happy": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-back-happy.png"
+      ]
+    },
+    "left-happy": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-left-happy.png"
+      ]
+    },
+    "right-happy": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-right-happy.png"
+      ]
+    },
+    "front-angry": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-front-angry.png"
+      ]
+    },
+    "back-angry": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-back-angry.png"
+      ]
+    },
+    "left-angry": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-left-angry.png"
+      ]
+    },
+    "right-angry": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/warrior-right-angry.png"
+      ]
+    },
+    "walk-left": {
+      "fps": 10,
+      "loop": true,
+      "frames": [
+        "walk-left/warrior-walk-left-01.png",
+        "walk-left/warrior-walk-left-02.png",
+        "walk-left/warrior-walk-left-03.png",
+        "walk-left/warrior-walk-left-04.png",
+        "walk-left/warrior-walk-left-05.png",
+        "walk-left/warrior-walk-left-06.png",
+        "walk-left/warrior-walk-left-07.png",
+        "walk-left/warrior-walk-left-08.png"
+      ]
+    },
+    "walk-right": {
+      "fps": 10,
+      "loop": true,
+      "frames": [
+        "walk-right/warrior-walk-right-01.png",
+        "walk-right/warrior-walk-right-02.png",
+        "walk-right/warrior-walk-right-03.png",
+        "walk-right/warrior-walk-right-04.png",
+        "walk-right/warrior-walk-right-05.png",
+        "walk-right/warrior-walk-right-06.png",
+        "walk-right/warrior-walk-right-07.png",
+        "walk-right/warrior-walk-right-08.png"
+      ]
+    },
+    "climb-up": {
+      "fps": 10,
+      "loop": true,
+      "frames": [
+        "climb-up/warrior-climb-up-01.png",
+        "climb-up/warrior-climb-up-02.png",
+        "climb-up/warrior-climb-up-03.png",
+        "climb-up/warrior-climb-up-04.png",
+        "climb-up/warrior-climb-up-05.png",
+        "climb-up/warrior-climb-up-06.png",
+        "climb-up/warrior-climb-up-07.png",
+        "climb-up/warrior-climb-up-08.png"
+      ]
+    },
+    "jump-down": {
+      "fps": 12,
+      "loop": false,
+      "nextOptions": [
+        "landing-left",
+        "landing-right"
+      ],
+      "frames": [
+        "jump-down/warrior-jump-down-01.png",
+        "jump-down/warrior-jump-down-02.png",
+        "jump-down/warrior-jump-down-03.png",
+        "jump-down/warrior-jump-down-04.png",
+        "jump-down/warrior-jump-down-05.png",
+        "jump-down/warrior-jump-down-06.png",
+        "jump-down/warrior-jump-down-07.png",
+        "jump-down/warrior-jump-down-08.png"
+      ]
+    },
+    "wall-cling": {
+      "fps": 6,
+      "loop": true,
+      "frames": [
+        "wall-cling/warrior-wall-cling-01.png",
+        "wall-cling/warrior-wall-cling-02.png",
+        "wall-cling/warrior-wall-cling-03.png",
+        "wall-cling/warrior-wall-cling-04.png"
+      ]
+    },
+    "climb-entry-left": {
+      "fps": 10,
+      "loop": false,
+      "next": "wall-cling",
+      "frames": [
+        "climb-entry-left/warrior-climb-entry-left-01.png",
+        "climb-entry-left/warrior-climb-entry-left-02.png",
+        "climb-entry-left/warrior-climb-entry-left-03.png",
+        "climb-entry-left/warrior-climb-entry-left-04.png"
+      ]
+    },
+    "climb-entry-right": {
+      "fps": 10,
+      "loop": false,
+      "next": "wall-cling",
+      "frames": [
+        "climb-entry-right/warrior-climb-entry-right-01.png",
+        "climb-entry-right/warrior-climb-entry-right-02.png",
+        "climb-entry-right/warrior-climb-entry-right-03.png",
+        "climb-entry-right/warrior-climb-entry-right-04.png"
+      ]
+    },
+    "landing-left": {
+      "fps": 10,
+      "loop": false,
+      "next": "walk-left",
+      "frames": [
+        "landing-left/warrior-landing-left-01.png",
+        "landing-left/warrior-landing-left-02.png",
+        "landing-left/warrior-landing-left-03.png",
+        "landing-left/warrior-landing-left-04.png"
+      ]
+    },
+    "landing-right": {
+      "fps": 10,
+      "loop": false,
+      "next": "walk-right",
+      "frames": [
+        "landing-right/warrior-landing-right-01.png",
+        "landing-right/warrior-landing-right-02.png",
+        "landing-right/warrior-landing-right-03.png",
+        "landing-right/warrior-landing-right-04.png"
+      ]
+    }
+  }
+}

@@ -1,0 +1,215 @@
+{
+  "character": "female-angel",
+  "hair": "jet-black",
+  "canvas": {
+    "width": 512,
+    "height": 512,
+    "format": "RGBA PNG"
+  },
+  "anchors": {
+    "grounded": {
+      "x": 256,
+      "y": 500
+    },
+    "airborne": {
+      "x": 256,
+      "y": 256
+    }
+  },
+  "states": {
+    "front-neutral": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-front-neutral.png"
+      ]
+    },
+    "back-neutral": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-back-neutral.png"
+      ]
+    },
+    "left-neutral": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-left-neutral.png"
+      ]
+    },
+    "right-neutral": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-right-neutral.png"
+      ]
+    },
+    "front-happy": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-front-happy.png"
+      ]
+    },
+    "back-happy": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-back-happy.png"
+      ]
+    },
+    "left-happy": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-left-happy.png"
+      ]
+    },
+    "right-happy": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-right-happy.png"
+      ]
+    },
+    "front-angry": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-front-angry.png"
+      ]
+    },
+    "back-angry": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-back-angry.png"
+      ]
+    },
+    "left-angry": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-left-angry.png"
+      ]
+    },
+    "right-angry": {
+      "fps": 1,
+      "loop": false,
+      "frames": [
+        "expressions/angel-right-angry.png"
+      ]
+    },
+    "walk-left": {
+      "fps": 10,
+      "loop": true,
+      "frames": [
+        "walk-left/angel-walk-left-01.png",
+        "walk-left/angel-walk-left-02.png",
+        "walk-left/angel-walk-left-03.png",
+        "walk-left/angel-walk-left-04.png",
+        "walk-left/angel-walk-left-05.png",
+        "walk-left/angel-walk-left-06.png",
+        "walk-left/angel-walk-left-07.png",
+        "walk-left/angel-walk-left-08.png"
+      ]
+    },
+    "walk-right": {
+      "fps": 10,
+      "loop": true,
+      "frames": [
+        "walk-right/angel-walk-right-01.png",
+        "walk-right/angel-walk-right-02.png",
+        "walk-right/angel-walk-right-03.png",
+        "walk-right/angel-walk-right-04.png",
+        "walk-right/angel-walk-right-05.png",
+        "walk-right/angel-walk-right-06.png",
+        "walk-right/angel-walk-right-07.png",
+        "walk-right/angel-walk-right-08.png"
+      ]
+    },
+    "glide-up": {
+      "fps": 12,
+      "loop": true,
+      "frames": [
+        "glide-up/angel-glide-up-01.png",
+        "glide-up/angel-glide-up-02.png",
+        "glide-up/angel-glide-up-03.png",
+        "glide-up/angel-glide-up-04.png",
+        "glide-up/angel-glide-up-05.png",
+        "glide-up/angel-glide-up-06.png",
+        "glide-up/angel-glide-up-07.png",
+        "glide-up/angel-glide-up-08.png"
+      ]
+    },
+    "glide-down": {
+      "fps": 12,
+      "loop": true,
+      "frames": [
+        "glide-down/angel-glide-down-01.png",
+        "glide-down/angel-glide-down-02.png",
+        "glide-down/angel-glide-down-03.png",
+        "glide-down/angel-glide-down-04.png",
+        "glide-down/angel-glide-down-05.png",
+        "glide-down/angel-glide-down-06.png",
+        "glide-down/angel-glide-down-07.png",
+        "glide-down/angel-glide-down-08.png"
+      ]
+    },
+    "hover": {
+      "fps": 6,
+      "loop": true,
+      "frames": [
+        "hover/angel-hover-01.png",
+        "hover/angel-hover-02.png",
+        "hover/angel-hover-03.png",
+        "hover/angel-hover-04.png"
+      ]
+    },
+    "takeoff-left": {
+      "fps": 10,
+      "loop": false,
+      "next": "hover",
+      "frames": [
+        "takeoff-left/angel-takeoff-left-01.png",
+        "takeoff-left/angel-takeoff-left-02.png",
+        "takeoff-left/angel-takeoff-left-03.png",
+        "takeoff-left/angel-takeoff-left-04.png"
+      ]
+    },
+    "takeoff-right": {
+      "fps": 10,
+      "loop": false,
+      "next": "hover",
+      "frames": [
+        "takeoff-right/angel-takeoff-right-01.png",
+        "takeoff-right/angel-takeoff-right-02.png",
+        "takeoff-right/angel-takeoff-right-03.png",
+        "takeoff-right/angel-takeoff-right-04.png"
+      ]
+    },
+    "landing-left": {
+      "fps": 10,
+      "loop": false,
+      "next": "left-neutral",
+      "frames": [
+        "landing-left/angel-landing-left-01.png",
+        "landing-left/angel-landing-left-02.png",
+        "landing-left/angel-landing-left-03.png",
+        "landing-left/angel-landing-left-04.png"
+      ]
+    },
+    "landing-right": {
+      "fps": 10,
+      "loop": false,
+      "next": "right-neutral",
+      "frames": [
+        "landing-right/angel-landing-right-01.png",
+        "landing-right/angel-landing-right-02.png",
+        "landing-right/angel-landing-right-03.png",
+        "landing-right/angel-landing-right-04.png"
+      ]
+    }
+  }
+}
