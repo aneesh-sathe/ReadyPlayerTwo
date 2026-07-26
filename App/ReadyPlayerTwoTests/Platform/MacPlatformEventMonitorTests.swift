@@ -1,6 +1,7 @@
 import AppKit
 import CompanionRuntime
 import Testing
+
 @testable import ReadyPlayerTwo
 
 @Suite(.serialized)
@@ -20,6 +21,14 @@ struct MacPlatformEventMonitorTests {
 
     monitor.start()
     workspaceCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+    workspaceCenter.post(
+      name: NSWorkspace.screensDidSleepNotification,
+      object: nil
+    )
+    workspaceCenter.post(
+      name: NSWorkspace.screensDidWakeNotification,
+      object: nil
+    )
     workspaceCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
     workspaceCenter.post(
       name: NSWorkspace.sessionDidResignActiveNotification,
@@ -27,6 +36,10 @@ struct MacPlatformEventMonitorTests {
     )
     workspaceCenter.post(
       name: NSWorkspace.sessionDidBecomeActiveNotification,
+      object: nil
+    )
+    workspaceCenter.post(
+      name: NSWorkspace.activeSpaceDidChangeNotification,
       object: nil
     )
     applicationCenter.post(
@@ -38,9 +51,12 @@ struct MacPlatformEventMonitorTests {
     #expect(
       receivedEvents == [
         .sleep,
+        .screenSaverStarted,
+        .screenSaverEnded,
         .wake,
         .lock,
         .unlock,
+        .displayConfigurationChanged,
         .displayConfigurationChanged,
       ]
     )
@@ -67,6 +83,14 @@ struct MacPlatformEventMonitorTests {
     monitor.stop()
     monitor.stop()
     workspaceCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+    workspaceCenter.post(
+      name: NSWorkspace.screensDidWakeNotification,
+      object: nil
+    )
+    workspaceCenter.post(
+      name: NSWorkspace.activeSpaceDidChangeNotification,
+      object: nil
+    )
     applicationCenter.post(
       name: NSApplication.didChangeScreenParametersNotification,
       object: nil
@@ -75,9 +99,22 @@ struct MacPlatformEventMonitorTests {
     #expect(receivedEvents == [.sleep])
 
     monitor.start()
-    workspaceCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+    workspaceCenter.post(
+      name: NSWorkspace.screensDidSleepNotification,
+      object: nil
+    )
+    workspaceCenter.post(
+      name: NSWorkspace.activeSpaceDidChangeNotification,
+      object: nil
+    )
     await drainMainActorTasks()
-    #expect(receivedEvents == [.sleep, .wake])
+    #expect(
+      receivedEvents == [
+        .sleep,
+        .screenSaverStarted,
+        .displayConfigurationChanged,
+      ]
+    )
   }
 
   private func drainMainActorTasks() async {

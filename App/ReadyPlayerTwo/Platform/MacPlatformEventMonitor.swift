@@ -47,6 +47,18 @@ final class MacPlatformEventMonitor: NSObject {
     )
     workspaceNotificationCenter.addObserver(
       self,
+      selector: #selector(workspaceScreensDidSleep),
+      name: NSWorkspace.screensDidSleepNotification,
+      object: nil
+    )
+    workspaceNotificationCenter.addObserver(
+      self,
+      selector: #selector(workspaceScreensDidWake),
+      name: NSWorkspace.screensDidWakeNotification,
+      object: nil
+    )
+    workspaceNotificationCenter.addObserver(
+      self,
       selector: #selector(workspaceSessionDidResignActive),
       name: NSWorkspace.sessionDidResignActiveNotification,
       object: nil
@@ -55,6 +67,12 @@ final class MacPlatformEventMonitor: NSObject {
       self,
       selector: #selector(workspaceSessionDidBecomeActive),
       name: NSWorkspace.sessionDidBecomeActiveNotification,
+      object: nil
+    )
+    workspaceNotificationCenter.addObserver(
+      self,
+      selector: #selector(workspaceActiveSpaceDidChange),
+      name: NSWorkspace.activeSpaceDidChangeNotification,
       object: nil
     )
     applicationNotificationCenter.addObserver(
@@ -88,12 +106,27 @@ final class MacPlatformEventMonitor: NSObject {
     )
     workspaceNotificationCenter.removeObserver(
       self,
+      name: NSWorkspace.screensDidSleepNotification,
+      object: nil
+    )
+    workspaceNotificationCenter.removeObserver(
+      self,
+      name: NSWorkspace.screensDidWakeNotification,
+      object: nil
+    )
+    workspaceNotificationCenter.removeObserver(
+      self,
       name: NSWorkspace.sessionDidResignActiveNotification,
       object: nil
     )
     workspaceNotificationCenter.removeObserver(
       self,
       name: NSWorkspace.sessionDidBecomeActiveNotification,
+      object: nil
+    )
+    workspaceNotificationCenter.removeObserver(
+      self,
+      name: NSWorkspace.activeSpaceDidChangeNotification,
       object: nil
     )
     applicationNotificationCenter.removeObserver(
@@ -114,6 +147,16 @@ final class MacPlatformEventMonitor: NSObject {
   }
 
   @objc
+  private func workspaceScreensDidSleep(_: Notification) {
+    enqueue(.screenSaverStarted)
+  }
+
+  @objc
+  private func workspaceScreensDidWake(_: Notification) {
+    enqueue(.screenSaverEnded)
+  }
+
+  @objc
   private func workspaceSessionDidResignActive(_: Notification) {
     enqueue(.lock)
   }
@@ -121,6 +164,13 @@ final class MacPlatformEventMonitor: NSObject {
   @objc
   private func workspaceSessionDidBecomeActive(_: Notification) {
     enqueue(.unlock)
+  }
+
+  @objc
+  private func workspaceActiveSpaceDidChange(_: Notification) {
+    // Active Space changes are public and safely trigger placement refresh.
+    // AppKit exposes no public Mission Control start or end notification.
+    enqueue(.displayConfigurationChanged)
   }
 
   @objc
