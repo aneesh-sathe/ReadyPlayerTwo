@@ -139,4 +139,19 @@ if rpt_soak_cpu_window_exceeds_limit \
   rpt_die "Sustained Roaming CPU below 5 percent must pass the soak."
 fi
 
+rpt_soak_resident_memory_exceeds_limit \
+  204800 \
+  3000 \
+  80000 \
+  121800 ||
+  rpt_die "Combined resident memory at 200 MiB must fail the soak."
+
+if rpt_soak_resident_memory_exceeds_limit \
+  204800 \
+  3000 \
+  80000 \
+  121799; then
+  rpt_die "Combined resident memory below 200 MiB must pass the soak."
+fi
+
 rpt_note "Soak library tests passed."
