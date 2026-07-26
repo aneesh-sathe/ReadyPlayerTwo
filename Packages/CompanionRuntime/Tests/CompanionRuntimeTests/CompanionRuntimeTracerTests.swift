@@ -164,6 +164,55 @@ struct CompanionRuntimeTracerTests {
     #expect(voice.startCount == 1)
     #expect(voice.stopCount == 0)
   }
+
+  @Test
+  func voiceFailureStopsCaptureAndRequiresExplicitRetry() async throws {
+    let voice = ScriptedVoiceSession()
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(presence: .parked),
+      stage: RecordingStage(),
+      voice: voice,
+      platform: FixedPlatform(),
+      clock: ImmediateClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+    _ = await snapshots.next()
+    await runtime.send(.summon(.keyboardShortcut))
+    _ = await snapshots.next()
+
+    let failure = CompanionFailure(
+      kind: .network,
+      message: "Connection lost. Retry when ready."
+    )
+    voice.emit(.failed(failure))
+
+    let failedValue = await snapshots.next()
+    let failed = try #require(failedValue)
+    #expect(failed.voice == .error(failure))
+    #expect(failed.recoverableError == failure)
+    #expect(failed.basePresence == .parked)
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 1)
+
+    await runtime.send(.retryConversation)
+
+    let retryValue = await snapshots.next()
+    let retry = try #require(retryValue)
+    #expect(retry.voice == .connecting)
+    #expect(retry.recoverableError == nil)
+    #expect(voice.startCount == 2)
+
+    voice.emit(.listening)
+
+    let listeningValue = await snapshots.next()
+    let listening = try #require(listeningValue)
+    #expect(listening.voice == .listening)
+    #expect(listening.basePresence == .parked)
+    #expect(voice.startCount == 2)
+  }
 }
 
 @MainActor

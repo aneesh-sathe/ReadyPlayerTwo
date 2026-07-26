@@ -34,6 +34,7 @@ public enum CompanionCommand: Equatable, Sendable {
   case endConversation
   case setPresence(PresenceState)
   case selectAvatar(CompanionAvatar)
+  case retryConversation
 }
 
 public enum VoiceSessionEvent: Equatable, Sendable {
@@ -276,26 +277,7 @@ public final class CompanionRuntime {
         return
       }
 
-      observeVoiceEventsIfNeeded()
-      voiceState = .connecting
-      bubbleState = .connecting
-      recoverableError = nil
-      await publish()
-
-      do {
-        try await voice.start()
-      } catch {
-        let failure =
-          (error as? CompanionFailure)
-          ?? CompanionFailure(
-            kind: .unknown,
-            message: "Voice could not start."
-          )
-        voiceState = .error(failure)
-        bubbleState = .error(failure.message)
-        recoverableError = failure
-        await publish()
-      }
+      await startVoiceSession()
 
     case .endConversation:
       guard voiceState != .idle, voiceState != .ending else {
@@ -321,6 +303,37 @@ public final class CompanionRuntime {
 
     case .selectAvatar(let selectedAvatar):
       avatar = selectedAvatar
+      await publish()
+
+    case .retryConversation:
+      guard case .error = voiceState else {
+        return
+      }
+
+      await startVoiceSession()
+    }
+  }
+
+  private func startVoiceSession() async {
+    observeVoiceEventsIfNeeded()
+    voiceState = .connecting
+    bubbleState = .connecting
+    recoverableError = nil
+    await publish()
+
+    do {
+      try await voice.start()
+    } catch {
+      let failure =
+        (error as? CompanionFailure)
+        ?? CompanionFailure(
+          kind: .unknown,
+          message: "Voice could not start."
+        )
+      await voice.stop()
+      voiceState = .error(failure)
+      bubbleState = .error(failure.message)
+      recoverableError = failure
       await publish()
     }
   }
@@ -363,6 +376,7 @@ public final class CompanionRuntime {
       voiceState = .error(failure)
       bubbleState = .error(failure.message)
       recoverableError = failure
+      await voice.stop()
     }
 
     await publish()
