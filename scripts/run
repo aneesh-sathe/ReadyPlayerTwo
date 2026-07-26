@@ -207,6 +207,7 @@ fi
 
 rpt_note "Launching one Companion app process..."
 env -u OPENAI_API_KEY \
+  -u RPT_LIFECYCLE_REPORT_PATH \
   "READYPLAYERTWO_BROKER_ORIGIN=$broker_origin" \
   "READYPLAYERTWO_BROKER_BEARER=$broker_bearer_token" \
   "READYPLAYERTWO_VOICE_CONFIGURED=$voice_configured" \
@@ -214,6 +215,14 @@ env -u OPENAI_API_KEY \
   "$app_executable" \
   >/dev/null 2>&1 &
 app_pid=$!
+
+if [[ -n "${RPT_LIFECYCLE_REPORT_PATH:-}" ]]; then
+  rpt_write_lifecycle_report \
+    "$RPT_LIFECYCLE_REPORT_PATH" \
+    "$$" \
+    "$broker_pid" \
+    "$app_pid"
+fi
 
 while kill -0 "$app_pid" 2>/dev/null; do
   if ! kill -0 "$broker_pid" 2>/dev/null; then

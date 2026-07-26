@@ -85,6 +85,46 @@ rpt_without_openai_key() {
   env -u OPENAI_API_KEY "$@"
 }
 
+rpt_write_lifecycle_report() {
+  local report_path="$1"
+  local launcher_pid="$2"
+  local broker_pid="$3"
+  local app_pid="$4"
+
+  if [[ "$report_path" != /* ]]; then
+    rpt_die "The lifecycle report path must be absolute."
+    return
+  fi
+  if [[ -e "$report_path" || -L "$report_path" ]]; then
+    rpt_die "The lifecycle report path already exists."
+    return
+  fi
+  if [[ ! -d "${report_path:h}" ]]; then
+    rpt_die "The lifecycle report parent directory does not exist."
+    return
+  fi
+
+  local process_id
+  for process_id in "$launcher_pid" "$broker_pid" "$app_pid"; do
+    if [[ "$process_id" != <1-> ]]; then
+      rpt_die "Lifecycle reports require positive process identifiers."
+      return
+    fi
+  done
+
+  (
+    umask 077
+    setopt noclobber
+    printf '%s\n' \
+      "schema_version=1" \
+      "launcher_pid=$launcher_pid" \
+      "broker_pid=$broker_pid" \
+      "app_pid=$app_pid" \
+      >"$report_path"
+  ) 2>/dev/null ||
+    rpt_die "The lifecycle report could not be created safely."
+}
+
 rpt_swift_format() {
   if command -v swift-format >/dev/null 2>&1; then
     swift-format "$@"

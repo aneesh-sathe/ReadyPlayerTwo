@@ -8,6 +8,14 @@ rpt_require_command rg "Install ripgrep."
 rpt_require_command swift "Install and select Xcode."
 rpt_prepare_build_directories
 
+shell_tests=("$RPT_SCRIPT_DIR"/tests/*(N))
+for shell_test in "${shell_tests[@]}"; do
+  [[ -x "$shell_test" ]] ||
+    rpt_die "Shell test is not executable: ${shell_test:t}"
+  rpt_note "Running shell test ${shell_test:t}..."
+  "$shell_test"
+done
+
 product_source_paths=()
 if [[ -d "$RPT_ROOT/App/ReadyPlayerTwo" ]]; then
   product_source_paths+=("$RPT_ROOT/App/ReadyPlayerTwo")
