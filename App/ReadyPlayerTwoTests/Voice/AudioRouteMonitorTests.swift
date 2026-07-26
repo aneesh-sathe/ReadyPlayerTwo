@@ -6,6 +6,40 @@ import Testing
 @MainActor
 struct AudioRouteMonitorTests {
   @Test
+  func hardwareReadsSupportedSelectedDataSources() throws {
+    let properties = ScriptedAudioRouteProperties(
+      values: [
+        AudioRouteProperty(
+          objectID: AudioObjectID(kAudioObjectSystemObject),
+          selector: kAudioHardwarePropertyDefaultInputDevice,
+          scope: kAudioObjectPropertyScopeGlobal
+        ): 17,
+        AudioRouteProperty(
+          objectID: AudioObjectID(kAudioObjectSystemObject),
+          selector: kAudioHardwarePropertyDefaultOutputDevice,
+          scope: kAudioObjectPropertyScopeGlobal
+        ): 23,
+        AudioRouteProperty(
+          objectID: AudioObjectID(17),
+          selector: kAudioDevicePropertyDataSource,
+          scope: kAudioDevicePropertyScopeInput
+        ): 41,
+      ]
+    )
+    let hardware = CoreAudioDefaultRouteHardware(properties: properties)
+
+    #expect(
+      try hardware.defaultRoute()
+        == AudioRouteSnapshot(
+          inputDevice: AudioDeviceID(17),
+          outputDevice: AudioDeviceID(23),
+          inputDataSource: 41,
+          outputDataSource: nil
+        )
+    )
+  }
+
+  @Test
   func changedDataSourceOnCurrentDevicePublishesOneRouteEvent()
     async throws
   {
@@ -68,6 +102,37 @@ struct AudioRouteMonitorTests {
     monitor.stop()
     #expect(hardware.stopCount == 1)
   }
+}
+
+@MainActor
+private final class ScriptedAudioRouteProperties:
+  AudioRoutePropertyAccessPort
+{
+  var values: [AudioRouteProperty: UInt32]
+
+  init(values: [AudioRouteProperty: UInt32]) {
+    self.values = values
+  }
+
+  func hasValue(for property: AudioRouteProperty) -> Bool {
+    values[property] != nil
+  }
+
+  func value(for property: AudioRouteProperty) throws -> UInt32 {
+    guard let value = values[property] else {
+      throw CocoaError(.fileReadUnknown)
+    }
+    return value
+  }
+
+  func observe(
+    _ property: AudioRouteProperty,
+    didChange: @escaping @MainActor @Sendable () -> Void
+  ) throws -> AudioRoutePropertyObservation {
+    AudioRoutePropertyObservation()
+  }
+
+  func stopObserving(_ observation: AudioRoutePropertyObservation) {}
 }
 
 @MainActor
