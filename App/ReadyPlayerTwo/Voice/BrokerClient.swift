@@ -27,7 +27,7 @@ enum BrokerClientError: Error, Equatable, Sendable {
   case missingConfiguration(String)
   case invalidOrigin
   case invalidResponse
-  case unsuccessfulResponse(Int)
+  case unsuccessfulResponse(statusCode: Int, code: String?)
   case malformedSecret
 }
 
@@ -124,7 +124,18 @@ struct BrokerClient: BrokerClientPort, Sendable {
 
     let (data, response) = try await httpClient.data(for: request)
     guard (200..<300).contains(response.statusCode) else {
-      throw BrokerClientError.unsuccessfulResponse(response.statusCode)
+      let reportedCode = try? JSONDecoder().decode(
+        BrokerFailurePayload.self,
+        from: data
+      ).error
+      let stableCode =
+        reportedCode.flatMap {
+          Self.stableFailureCodes.contains($0) ? $0 : nil
+        }
+      throw BrokerClientError.unsuccessfulResponse(
+        statusCode: response.statusCode,
+        code: stableCode
+      )
     }
 
     let payload: SecretPayload
@@ -159,6 +170,12 @@ struct BrokerClient: BrokerClientPort, Sendable {
       || host == "127.0.0.1"
       || host == "::1"
   }
+
+  private static let stableFailureCodes = Set([
+    "upstream_authentication_failed",
+    "upstream_rate_limited",
+    "upstream_unavailable",
+  ])
 }
 
 private struct SecretPayload: Decodable {
@@ -174,4 +191,8 @@ private struct SecretPayload: Decodable {
 private struct RequestedConfiguration: Encodable {
   let model: String
   let voice: String
+}
+
+private struct BrokerFailurePayload: Decodable {
+  let error: String
 }

@@ -131,6 +131,37 @@ struct OpenAIRealtimeVoiceSessionTests {
   }
 
   @Test
+  func attributesRedactedUpstreamAuthenticationToTheProvider() async {
+    let transport = ScriptedRealtimeTransport()
+    let session = OpenAIRealtimeVoiceSession(
+      microphonePermission: StubMicrophonePermission(isGranted: true),
+      broker: FailingBrokerClient(
+        error: .unsuccessfulResponse(
+          statusCode: 401,
+          code: "upstream_authentication_failed"
+        )
+      ),
+      transport: transport
+    )
+
+    do {
+      try await session.start()
+      Issue.record("Expected provider authentication failure")
+    } catch let failure as CompanionFailure {
+      #expect(failure.kind == .authentication)
+      #expect(
+        failure.message
+          == "The voice provider rejected its server configuration."
+      )
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+
+    #expect(transport.ephemeralKeys.isEmpty)
+    #expect(transport.closeCount == 0)
+  }
+
+  @Test
   func aTransportFailureDoesNotBecomeAnEndedEvent() async throws {
     let transport = ScriptedRealtimeTransport()
     let session = OpenAIRealtimeVoiceSession(
@@ -227,6 +258,18 @@ private actor StubBrokerClient: BrokerClientPort {
       value: "ek_test_session",
       expiresAt: 1_900_000_000
     )
+  }
+}
+
+private actor FailingBrokerClient: BrokerClientPort {
+  let error: BrokerClientError
+
+  init(error: BrokerClientError) {
+    self.error = error
+  }
+
+  func fetchClientSecret() async throws -> EphemeralClientSecret {
+    throw error
   }
 }
 

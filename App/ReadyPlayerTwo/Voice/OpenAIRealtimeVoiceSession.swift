@@ -343,13 +343,22 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
           kind: .voiceNotConfigured,
           message: "The local voice broker is not configured."
         )
-      case .unsuccessfulResponse(let status)
+      case .unsuccessfulResponse(
+        _,
+        let code
+      )
+      where code == "upstream_authentication_failed":
+        return CompanionFailure(
+          kind: .authentication,
+          message: "The voice provider rejected its server configuration."
+        )
+      case .unsuccessfulResponse(let status, _)
       where status == 401 || status == 403:
         return CompanionFailure(
           kind: .authentication,
           message: "The local voice broker rejected this app."
         )
-      case .unsuccessfulResponse(let status) where status == 429:
+      case .unsuccessfulResponse(let status, _) where status == 429:
         return CompanionFailure(
           kind: .rateLimited,
           message: "Voice is temporarily rate limited."

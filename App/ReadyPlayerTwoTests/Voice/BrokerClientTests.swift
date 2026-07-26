@@ -77,6 +77,61 @@ struct BrokerClientTests {
       ]
     )
   }
+
+  @Test
+  func preservesOnlyStableRedactedBrokerFailureCodes() async throws {
+    let cases: [(Int, String, BrokerClientError)] = [
+      (
+        401,
+        #"{"error":"upstream_authentication_failed"}"#,
+        .unsuccessfulResponse(
+          statusCode: 401,
+          code: "upstream_authentication_failed"
+        )
+      ),
+      (
+        429,
+        #"{"error":"upstream_rate_limited"}"#,
+        .unsuccessfulResponse(
+          statusCode: 429,
+          code: "upstream_rate_limited"
+        )
+      ),
+      (
+        502,
+        #"{"error":"provider body must stay opaque"}"#,
+        .unsuccessfulResponse(statusCode: 502, code: nil)
+      ),
+    ]
+
+    for (statusCode, body, expectedError) in cases {
+      let responseURL = try #require(
+        URL(string: "http://127.0.0.1:43120/v1/realtime/client-secret")
+      )
+      let response = try #require(
+        HTTPURLResponse(
+          url: responseURL,
+          statusCode: statusCode,
+          httpVersion: nil,
+          headerFields: ["Content-Type": "application/json"]
+        )
+      )
+      let client = try BrokerClient(
+        environment: [
+          "READYPLAYERTWO_BROKER_BEARER": "launch-bearer",
+          "READYPLAYERTWO_BROKER_ORIGIN": "http://127.0.0.1:43120",
+        ],
+        httpClient: RecordingHTTPDataClient(
+          data: Data(body.utf8),
+          response: response
+        )
+      )
+
+      await #expect(throws: expectedError) {
+        try await client.fetchClientSecret()
+      }
+    }
+  }
 }
 
 private actor RecordingHTTPDataClient: HTTPDataClient {
