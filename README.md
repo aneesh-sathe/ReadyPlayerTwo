@@ -75,6 +75,19 @@ gates:
 ./scripts/test
 ```
 
+Run the real packaged lifecycle smoke without an OpenAI key:
+
+```sh
+./scripts/smoke
+```
+
+The smoke command builds through `./scripts/run`, launches the signed Dockless
+app and loopback broker, rejects a duplicate launch, audits macOS TCC events for
+unexpected microphone access, then interrupts the launcher and confirms its
+exact captured app and broker processes exited. Stop any existing launcher
+before running it. The command deliberately does not Summon, so it does not
+validate microphone consent or live OpenAI voice.
+
 Live voice quality, microphone consent, multi-display behavior, and visual
 polish still require testing on the target Mac. A trusted local signing identity
 is recommended for stable microphone permission across rebuilds:

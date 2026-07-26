@@ -137,6 +137,8 @@
 - `./scripts/doctor` validates the local toolchain, signing, broker, and optional voice configuration without printing secrets.
 - `./scripts/test` runs privacy scans, formatting, runtime tests, broker tests, XcodeGen, the packaged build, and AppKit tests.
 - `./scripts/run` is the supervised local launch seam for the app and loopback broker.
+- `./scripts/smoke` runs the real no-key packaged launcher and verifies signed Dockless launch, loopback broker health, duplicate rejection, no launch-time microphone request, and exact-PID interrupt cleanup.
+- `RPT_LIFECYCLE_REPORT_PATH` is a test-only launcher seam that writes an owner-only PID report. Never add credentials, endpoints, or user data to it.
 - `project.yml` is the Xcode project source of truth. Never commit or hand-edit `ReadyPlayerTwo.xcodeproj`.
 - The current machine has no trusted Apple Development identity. Ad hoc signing builds and runs locally, but microphone consent may need to be granted again after rebuilds.
 - Xcode may report an outdated CoreSimulator framework while macOS builds and tests still pass. V1 does not require a simulator.
