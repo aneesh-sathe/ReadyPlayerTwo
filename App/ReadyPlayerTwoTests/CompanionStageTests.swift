@@ -153,16 +153,150 @@ struct CompanionStageTests {
 
     driver.advance(by: 0.8)
     #expect(stage.currentMotionPlan == nil)
-    #expect(stage.currentAnimationState == AnimationStateID("front-neutral"))
+    #expect(stage.currentAnimationState == AnimationStateID("wall-cling"))
     #expect(selector.selectionCount == 1)
 
     driver.advance(by: 2.9)
     #expect(stage.currentMotionPlan == nil)
+    #expect(stage.currentAnimationState == AnimationStateID("wall-cling"))
     #expect(selector.selectionCount == 1)
 
     driver.advance(by: 0.1)
     #expect(stage.currentMotionPlan?.intent == .walk(.left))
     #expect(selector.selectionCount == 2)
+  }
+
+  @Test
+  func quietHoldsFollowTheCompletedMotionIntent() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let scenarios: [(CompanionAvatar, [StableHoldExpectation])] = [
+      (
+        .orion,
+        [
+          .init(
+            intent: .walk(.right),
+            completionDuration: 2.4,
+            state: "front-neutral"
+          ),
+          .init(
+            intent: .climbUp(entryFrom: .right),
+            completionDuration: 0.4 + 2.0 / 3.0 + 0.8,
+            state: "wall-cling"
+          ),
+          .init(
+            intent: .cling,
+            completionDuration: 2.4,
+            state: "wall-cling"
+          ),
+          .init(
+            intent: .jumpDown(landingToward: .left),
+            completionDuration: 2.0 / 3.0 + 0.4,
+            state: "front-neutral"
+          ),
+          .init(
+            intent: .land(.left),
+            completionDuration: 0.4 + 0.8,
+            state: "front-neutral"
+          ),
+        ]
+      ),
+      (
+        .athena,
+        [
+          .init(
+            intent: .walk(.right),
+            completionDuration: 2.4,
+            state: "front-neutral"
+          ),
+          .init(
+            intent: .takeoff(.right),
+            completionDuration: 0.4 + 2.0 / 3.0,
+            state: "hover"
+          ),
+          .init(
+            intent: .glide(.up),
+            completionDuration: 2.4,
+            state: "hover"
+          ),
+          .init(
+            intent: .hover,
+            completionDuration: 2.4,
+            state: "hover"
+          ),
+          .init(
+            intent: .slowDrift(.left),
+            completionDuration: 2.4,
+            state: "hover"
+          ),
+          .init(
+            intent: .glide(.down),
+            completionDuration: 2.4,
+            state: "hover"
+          ),
+          .init(
+            intent: .land(.right),
+            completionDuration: 0.4 + 1,
+            state: "front-neutral"
+          ),
+        ]
+      ),
+    ]
+
+    for (avatar, expectations) in scenarios {
+      let driver = ManualCompanionStageFrameDriver()
+      let selector = ScriptedCompanionStageRoamingIntentSelector(
+        intents: expectations.map(\.intent)
+      )
+      let stage = try CompanionStage(
+        assetRootURL: resourceURL,
+        terrain: FixedCompanionStageTerrain(
+          surface: CompanionStageSurface(
+            visibleFrame: NSRect(x: 0, y: 0, width: 1_280, height: 800),
+            scaleFactor: 2
+          )
+        ),
+        frameDriver: driver,
+        roamingIntentSelector: selector,
+        panelPresentationEnabled: false,
+        hostsSpriteView: false
+      )
+
+      await stage.render(
+        Self.snapshot(
+          avatar: avatar,
+          isVisible: true,
+          position: StagePoint(x: 640, y: 400)
+        )
+      )
+
+      for (index, expectation) in expectations.enumerated() {
+        #expect(stage.currentMotionPlan?.intent == expectation.intent)
+        driver.advance(by: expectation.completionDuration)
+
+        #expect(stage.currentMotionPlan == nil)
+        #expect(
+          stage.currentAnimationState
+            == AnimationStateID(expectation.state)
+        )
+
+        driver.advance(by: 2.9)
+        #expect(stage.currentMotionPlan == nil)
+        #expect(
+          stage.currentAnimationState
+            == AnimationStateID(expectation.state)
+        )
+
+        guard expectations.indices.contains(index + 1) else {
+          continue
+        }
+        driver.advance(by: 0.1)
+        #expect(
+          stage.currentMotionPlan?.intent
+            == expectations[index + 1].intent
+        )
+      }
+    }
   }
 
   @Test
@@ -998,4 +1132,10 @@ private final class ScriptedCompanionStageRoamingIntentSelector:
     selectionCount += 1
     return intents[index]
   }
+}
+
+private struct StableHoldExpectation {
+  let intent: MotionIntent
+  let completionDuration: TimeInterval
+  let state: String
 }

@@ -370,6 +370,7 @@ final class CompanionStage: StagePort {
   private var animationElapsed = 0.0
   private var burstElapsed = 0.0
   private var holdRemaining = 0.0
+  private var quietHoldAnimationState = AnimationStateID("front-neutral")
   private var relocationGeneration = 0
   private var isRelocating = false
   private var relocationPositionedPlacement: CompanionPlacement?
@@ -645,8 +646,11 @@ final class CompanionStage: StagePort {
     }
 
     if holdRemaining > 0 {
+      if avatarChanged {
+        quietHoldAnimationState = AnimationStateID("front-neutral")
+      }
       showAnimation(
-        named: "front-neutral",
+        named: quietHoldAnimationState.rawValue,
         avatarChanged: avatarChanged
       )
     } else {
@@ -798,13 +802,35 @@ final class CompanionStage: StagePort {
   }
 
   private func finishRoamingPlan() {
-    if currentMotionPlan != nil {
-      currentMotionPlan = nil
-      activeStepIndex = 0
-      animationElapsed = 0
-      burstElapsed = 0
-      holdRemaining = Self.roamingHoldDuration
-      showAnimation(named: "front-neutral", avatarChanged: false)
+    guard let completedPlan = currentMotionPlan else {
+      return
+    }
+
+    quietHoldAnimationState = quietHoldState(for: completedPlan)
+    currentMotionPlan = nil
+    activeStepIndex = 0
+    animationElapsed = 0
+    burstElapsed = 0
+    holdRemaining = Self.roamingHoldDuration
+    showAnimation(
+      named: quietHoldAnimationState.rawValue,
+      avatarChanged: false
+    )
+  }
+
+  private func quietHoldState(
+    for completedPlan: MotionPlan
+  ) -> AnimationStateID {
+    switch (completedPlan.avatar, completedPlan.intent) {
+    case (.orion, .climbUp), (.orion, .cling):
+      AnimationStateID("wall-cling")
+    case (.athena, .takeoff),
+      (.athena, .glide),
+      (.athena, .hover),
+      (.athena, .slowDrift):
+      AnimationStateID("hover")
+    default:
+      AnimationStateID("front-neutral")
     }
   }
 
@@ -1024,6 +1050,7 @@ final class CompanionStage: StagePort {
     animationElapsed = 0
     burstElapsed = 0
     holdRemaining = 0
+    quietHoldAnimationState = AnimationStateID("front-neutral")
   }
 
   private func positionPanel() {
