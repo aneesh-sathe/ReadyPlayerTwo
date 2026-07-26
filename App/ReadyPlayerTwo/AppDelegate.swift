@@ -12,7 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
 
-    let preferencesStore = UserDefaultsInterfacePreferencesStore()
+    let launchMode = ApplicationLaunchMode.resolve()
+    let preferencesStore = launchMode.makePreferencesStore()
     let preferences = preferencesStore.load()
     let stageActions = CompanionStageActions()
     let stage = CompanionStage(
@@ -70,10 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         await runtime?.send(.summon(.keyboardShortcut))
       }
     }
-    _ = shortcutController.activate(
-      preferences.shortcut,
-      onInvocation: shortcutInvocation
-    )
+    if launchMode.registersGlobalShortcut {
+      _ = shortcutController.activate(
+        preferences.shortcut,
+        onInvocation: shortcutInvocation
+      )
+    }
     let shortcutSettings =
       ShortcutSettingsPopoverController(
         shortcutController: shortcutController,
@@ -106,12 +109,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       preferencesStore: preferencesStore,
       initialPreferences: preferences,
       voiceReadinessChecker:
-        LoopbackVoiceReadinessChecker()
+        launchMode.makeVoiceReadinessChecker()
     )
     let platformEventMonitor = MacPlatformEventMonitor { event in
       await runtime.send(.platform(event))
     }
-    platformEventMonitor.start()
+    if launchMode.monitorsPlatformEvents {
+      platformEventMonitor.start()
+    }
 
     self.coordinator = coordinator
     self.runtime = runtime
