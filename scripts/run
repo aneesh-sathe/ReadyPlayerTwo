@@ -11,6 +11,26 @@ rpt_require_command curl "Install or restore curl."
 rpt_require_command codesign "This command is supplied by macOS."
 rpt_prepare_build_directories
 
+if [[ "${RPT_RUN_LOCK_HELD:-0}" != "1" ]]; then
+  if /usr/bin/lockf \
+    -k \
+    -t 0 \
+    "$RPT_RUNTIME_ROOT/launcher.lock" \
+    env RPT_RUN_LOCK_HELD=1 "$0" "$@"; then
+    exit 0
+  else
+    launcher_status="$?"
+  fi
+
+  if (( launcher_status == 75 )); then
+    rpt_note "ReadyPlayerTwo is already running."
+    exit 0
+  fi
+
+  exit "$launcher_status"
+fi
+unset RPT_RUN_LOCK_HELD
+
 [[ -f "$RPT_ROOT/project.yml" ]] ||
   rpt_die "project.yml is required before the app can run."
 [[ -f "$RPT_ROOT/Broker/src/broker.ts" ]] ||
