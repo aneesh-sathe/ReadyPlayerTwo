@@ -8,3 +8,6 @@ node_modules/
 *.xcresult
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
+ReadyPlayerTwo.xcodeproj/
+App/ReadyPlayerTwo/Info.plist
+App/ReadyPlayerTwo/ReadyPlayerTwo.entitlements
