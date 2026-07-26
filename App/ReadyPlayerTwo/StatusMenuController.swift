@@ -6,6 +6,30 @@ enum VoiceReadiness: Equatable, Sendable {
   case ready
   case notConfigured
   case brokerUnavailable
+
+  var idleVoiceDescription: String {
+    switch self {
+    case .checking:
+      "Voice: Checking"
+    case .ready:
+      "Voice: Ready"
+    case .notConfigured:
+      "Voice: Not Configured"
+    case .brokerUnavailable:
+      "Voice: Unavailable"
+    }
+  }
+
+  var brokerDescription: String {
+    switch self {
+    case .checking:
+      "Broker: Checking"
+    case .ready, .notConfigured:
+      "Broker: Healthy"
+    case .brokerUnavailable:
+      "Broker: Unavailable"
+    }
+  }
 }
 
 struct StatusMenuPresentation: Equatable {
@@ -30,15 +54,7 @@ struct StatusMenuPresentation: Equatable {
     hideOrShowTitle =
       snapshot.basePresence == .hidden ? "Show Companion" : "Hide Companion"
     processingDescription = "Voice Processing: Remote via OpenAI"
-
-    switch voiceReadiness {
-    case .checking:
-      brokerDescription = "Broker: Checking"
-    case .ready, .notConfigured:
-      brokerDescription = "Broker: Healthy"
-    case .brokerUnavailable:
-      brokerDescription = "Broker: Unavailable"
-    }
+    brokerDescription = voiceReadiness.brokerDescription
 
     switch snapshot.voice {
     case .idle:
@@ -46,16 +62,7 @@ struct StatusMenuPresentation: Equatable {
       conversationEnabled = true
       muteTitle = "Mute Microphone"
       muteVisible = false
-      switch voiceReadiness {
-      case .checking:
-        voiceDescription = "Voice: Checking"
-      case .ready:
-        voiceDescription = "Voice: Ready"
-      case .notConfigured:
-        voiceDescription = "Voice: Not Configured"
-      case .brokerUnavailable:
-        voiceDescription = "Voice: Unavailable"
-      }
+      voiceDescription = voiceReadiness.idleVoiceDescription
       microphoneDescription = "Microphone: Off"
     case .connecting:
       conversationTitle = "End Conversation"
@@ -123,7 +130,10 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
   private var orionItem: NSMenuItem?
   private var athenaItem: NSMenuItem?
   private var voiceDiagnosticItem: NSMenuItem?
+  private var brokerDiagnosticItem: NSMenuItem?
   private var microphoneDiagnosticItem: NSMenuItem?
+  private var latestSnapshot: CompanionSnapshot?
+  private var voiceReadiness = VoiceReadiness.checking
 
   var installedMenu: NSMenu? {
     statusItem?.menu
@@ -236,12 +246,26 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
       action: nil,
       keyEquivalent: ""
     )
+    brokerDiagnosticItem = NSMenuItem(
+      title: voiceReadiness.brokerDescription,
+      action: nil,
+      keyEquivalent: ""
+    )
+    let processingDiagnosticItem = NSMenuItem(
+      title: "Voice Processing: Remote via OpenAI",
+      action: nil,
+      keyEquivalent: ""
+    )
     if let voiceDiagnosticItem {
       diagnosticsMenu.addItem(voiceDiagnosticItem)
+    }
+    if let brokerDiagnosticItem {
+      diagnosticsMenu.addItem(brokerDiagnosticItem)
     }
     if let microphoneDiagnosticItem {
       diagnosticsMenu.addItem(microphoneDiagnosticItem)
     }
+    diagnosticsMenu.addItem(processingDiagnosticItem)
     diagnosticsItem.submenu = diagnosticsMenu
     menu.addItem(diagnosticsItem)
 
@@ -265,10 +289,16 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     NSStatusBar.system.removeStatusItem(statusItem)
     self.statusItem = nil
     actions = nil
+    latestSnapshot = nil
+    voiceReadiness = .checking
   }
 
   func render(_ snapshot: CompanionSnapshot) {
-    let presentation = StatusMenuPresentation(snapshot: snapshot)
+    latestSnapshot = snapshot
+    let presentation = StatusMenuPresentation(
+      snapshot: snapshot,
+      voiceReadiness: voiceReadiness
+    )
     conversationItem?.title = presentation.conversationTitle
     conversationItem?.isEnabled = presentation.conversationEnabled
     muteItem?.title = presentation.muteTitle
@@ -283,7 +313,20 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     athenaItem?.state =
       presentation.selectedAvatar == .athena ? .on : .off
     voiceDiagnosticItem?.title = presentation.voiceDescription
+    brokerDiagnosticItem?.title = presentation.brokerDescription
     microphoneDiagnosticItem?.title = presentation.microphoneDescription
+  }
+
+  func renderVoiceReadiness(_ voiceReadiness: VoiceReadiness) {
+    self.voiceReadiness = voiceReadiness
+    guard let latestSnapshot else {
+      voiceDiagnosticItem?.title =
+        voiceReadiness.idleVoiceDescription
+      brokerDiagnosticItem?.title =
+        voiceReadiness.brokerDescription
+      return
+    }
+    render(latestSnapshot)
   }
 
   private func addItem(

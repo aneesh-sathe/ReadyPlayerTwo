@@ -8,6 +8,43 @@ import Testing
 struct StatusMenuPresentationTests {
   @Test
   @MainActor
+  func statusMenuShowsReadinessBeforeASummon() throws {
+    let controller = StatusMenuController()
+    controller.install(
+      actions: StatusMenuActions(
+        summonOrEnd: {},
+        roam: {},
+        park: {},
+        hideOrShow: {},
+        selectAvatar: { _ in },
+        moveToCurrentDisplay: {},
+        muteOrUnmute: {},
+        quit: {}
+      )
+    )
+    defer {
+      controller.uninstall()
+    }
+
+    controller.renderVoiceReadiness(.ready)
+
+    let menu = try #require(controller.installedMenu)
+    let diagnostics = try #require(
+      menu.items.first(where: { $0.title == "Diagnostics" })?
+        .submenu
+    )
+    let titles = diagnostics.items.map(\.title)
+
+    #expect(titles.contains("Voice: Ready"))
+    #expect(titles.contains("Broker: Healthy"))
+    #expect(titles.contains("Microphone: Off"))
+    #expect(
+      titles.contains("Voice Processing: Remote via OpenAI")
+    )
+  }
+
+  @Test
+  @MainActor
   func statusMenuExposesAnchoredShortcutSettings() throws {
     let presenter = RecordingShortcutSettingsPresenter()
     let controller = StatusMenuController(
