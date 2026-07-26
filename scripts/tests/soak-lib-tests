@@ -72,4 +72,12 @@ unexpected_children="$(
 [[ "$unexpected_children" == "$unexpected_process_pid" ]] ||
   rpt_die "The soak must report only unexpected direct children."
 
+persistent_children="$(
+  rpt_soak_persistent_unexpected_children \
+    $'101\n202' \
+    $'202\n303'
+)"
+[[ "$persistent_children" == "202" ]] ||
+  rpt_die "Only a child that survives consecutive samples may fail the soak."
+
 rpt_note "Soak library tests passed."
