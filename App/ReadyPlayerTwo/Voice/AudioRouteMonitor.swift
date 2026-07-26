@@ -17,6 +17,20 @@ protocol AudioRouteMonitorPort: AnyObject {
 struct AudioRouteSnapshot: Equatable, Sendable {
   let inputDevice: AudioDeviceID
   let outputDevice: AudioDeviceID
+  let inputDataSource: UInt32?
+  let outputDataSource: UInt32?
+
+  init(
+    inputDevice: AudioDeviceID,
+    outputDevice: AudioDeviceID,
+    inputDataSource: UInt32? = nil,
+    outputDataSource: UInt32? = nil
+  ) {
+    self.inputDevice = inputDevice
+    self.outputDevice = outputDevice
+    self.inputDataSource = inputDataSource
+    self.outputDataSource = outputDataSource
+  }
 
   var hasUsableDevices: Bool {
     inputDevice != kAudioObjectUnknown
