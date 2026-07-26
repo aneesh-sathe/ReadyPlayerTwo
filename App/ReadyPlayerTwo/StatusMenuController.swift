@@ -176,18 +176,21 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
       }
 
       button.toolTip = "ReadyPlayerTwo"
+      button.setAccessibilityIdentifier("status.menu")
     }
 
     let menu = NSMenu(title: "ReadyPlayerTwo")
     conversationItem = addItem(
       to: menu,
       title: "Summon",
-      action: #selector(summonOrEnd)
+      action: #selector(summonOrEnd),
+      accessibilityIdentifier: "status.conversation"
     )
     muteItem = addItem(
       to: menu,
       title: "Mute Microphone",
-      action: #selector(muteOrUnmute)
+      action: #selector(muteOrUnmute),
+      accessibilityIdentifier: "status.mute"
     )
     muteItem?.isHidden = true
 
@@ -195,35 +198,42 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     roamItem = addItem(
       to: menu,
       title: "Roam",
-      action: #selector(roam)
+      action: #selector(roam),
+      accessibilityIdentifier: "status.roam"
     )
     parkItem = addItem(
       to: menu,
       title: "Park",
-      action: #selector(park)
+      action: #selector(park),
+      accessibilityIdentifier: "status.park"
     )
     hideOrShowItem = addItem(
       to: menu,
       title: "Hide Companion",
-      action: #selector(hideOrShow)
+      action: #selector(hideOrShow),
+      accessibilityIdentifier: "status.hide-or-show"
     )
     _ = addItem(
       to: menu,
       title: "Move to Current Display",
-      action: #selector(moveToCurrentDisplay)
+      action: #selector(moveToCurrentDisplay),
+      accessibilityIdentifier: "status.move-display"
     )
 
     let companionItem = NSMenuItem(title: "Companion", action: nil, keyEquivalent: "")
+    companionItem.setAccessibilityIdentifier("status.companion")
     let companionMenu = NSMenu(title: "Companion")
     orionItem = addItem(
       to: companionMenu,
       title: "Orion",
-      action: #selector(selectOrion)
+      action: #selector(selectOrion),
+      accessibilityIdentifier: "status.avatar.orion"
     )
     athenaItem = addItem(
       to: companionMenu,
       title: "Athena",
-      action: #selector(selectAthena)
+      action: #selector(selectAthena),
+      accessibilityIdentifier: "status.avatar.athena"
     )
     companionItem.submenu = companionMenu
     menu.addItem(companionItem)
@@ -231,12 +241,14 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     _ = addItem(
       to: menu,
       title: "Keyboard Shortcut…",
-      action: #selector(showShortcutSettings)
+      action: #selector(showShortcutSettings),
+      accessibilityIdentifier: "status.shortcut-settings"
     )
     _ = addItem(
       to: menu,
       title: "Voice Settings…",
-      action: #selector(showVoiceSettings)
+      action: #selector(showVoiceSettings),
+      accessibilityIdentifier: "status.voice-settings"
     )
 
     let diagnosticsItem = NSMenuItem(
@@ -283,6 +295,7 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
       to: menu,
       title: "Quit ReadyPlayerTwo",
       action: #selector(quit),
+      accessibilityIdentifier: "status.quit",
       keyEquivalent: "q"
     )
 
@@ -342,6 +355,7 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     to menu: NSMenu,
     title: String,
     action: Selector,
+    accessibilityIdentifier: String,
     keyEquivalent: String = ""
   ) -> NSMenuItem {
     let item = NSMenuItem(
@@ -350,6 +364,7 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
       keyEquivalent: keyEquivalent
     )
     item.target = self
+    item.setAccessibilityIdentifier(accessibilityIdentifier)
     menu.addItem(item)
     return item
   }

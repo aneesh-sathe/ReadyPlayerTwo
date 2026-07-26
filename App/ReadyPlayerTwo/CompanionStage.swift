@@ -427,6 +427,10 @@ final class CompanionStage: StagePort {
   func render(_ snapshot: CompanionSnapshot) async {
     let avatarChanged = snapshot.avatar != presentedAvatar
     presentedAvatar = snapshot.avatar
+    panel.updateAccessibilityPresentation(
+      avatar: snapshot.avatar,
+      presence: snapshot.basePresence
+    )
 
     guard snapshot.isVisible else {
       stopMotion()
@@ -1155,6 +1159,7 @@ final class CompanionPanel: NSPanel {
   private let canvasSize: NSSize
   private let interactionView: CompanionInteractionView
   private weak var spriteView: SKView?
+  private weak var accessibilityRootView: NSView?
   private var interactiveRegion: AlphaHitRegion?
   private var pointerTrackingTimer: Timer?
 
@@ -1214,9 +1219,15 @@ final class CompanionPanel: NSPanel {
     level = .floating
     collectionBehavior = [.moveToActiveSpace]
     animationBehavior = .none
+    setAccessibilityIdentifier("companion.window")
 
     let rootView = NSView(frame: contentRect)
     rootView.autoresizingMask = [.width, .height]
+    rootView.setAccessibilityElement(true)
+    rootView.setAccessibilityRole(.group)
+    rootView.setAccessibilityLabel("Desktop companion")
+    rootView.setAccessibilityIdentifier("companion.stage")
+    accessibilityRootView = rootView
 
     if hostsSpriteView {
       let spriteView = SKView(frame: contentRect)
@@ -1242,6 +1253,17 @@ final class CompanionPanel: NSPanel {
     interactionView.onDragFinished = { [weak self] point in
       self?.performCharacterDrag(to: point)
     }
+  }
+
+  func updateAccessibilityPresentation(
+    avatar: CompanionAvatar,
+    presence: PresenceState
+  ) {
+    let avatarName = avatar.rawValue.capitalized
+    let presenceName = presence.rawValue.capitalized
+    accessibilityRootView?.setAccessibilityValue(
+      "\(avatarName), \(presenceName)"
+    )
   }
 
   func present(scene: SKScene) {
