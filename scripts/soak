@@ -1,0 +1,8 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "${0:A:h}/lib.zsh"
+source "${0:A:h}/soak-lib.zsh"
+
+soak_duration_seconds="$(rpt_soak_duration_seconds)"
