@@ -38,6 +38,53 @@ struct AudioRouteSnapshot: Equatable, Sendable {
   }
 }
 
+struct AudioRouteProperty: Hashable, Sendable {
+  let objectID: AudioObjectID
+  let selector: AudioObjectPropertySelector
+  let scope: AudioObjectPropertyScope
+  let element: AudioObjectPropertyElement
+
+  init(
+    objectID: AudioObjectID,
+    selector: AudioObjectPropertySelector,
+    scope: AudioObjectPropertyScope,
+    element: AudioObjectPropertyElement =
+      kAudioObjectPropertyElementMain
+  ) {
+    self.objectID = objectID
+    self.selector = selector
+    self.scope = scope
+    self.element = element
+  }
+
+  var address: AudioObjectPropertyAddress {
+    AudioObjectPropertyAddress(
+      mSelector: selector,
+      mScope: scope,
+      mElement: element
+    )
+  }
+}
+
+struct AudioRoutePropertyObservation: Hashable, Sendable {
+  fileprivate let id: UUID
+
+  init() {
+    id = UUID()
+  }
+}
+
+@MainActor
+protocol AudioRoutePropertyAccessPort: AnyObject {
+  func hasValue(for property: AudioRouteProperty) -> Bool
+  func value(for property: AudioRouteProperty) throws -> UInt32
+  func observe(
+    _ property: AudioRouteProperty,
+    didChange: @escaping @MainActor @Sendable () -> Void
+  ) throws -> AudioRoutePropertyObservation
+  func stopObserving(_ observation: AudioRoutePropertyObservation)
+}
+
 @MainActor
 protocol AudioRouteHardwarePort: AnyObject {
   func defaultRoute() throws -> AudioRouteSnapshot
@@ -122,7 +169,7 @@ final class CoreAudioRouteMonitor: AudioRouteMonitorPort {
 }
 
 @MainActor
-private final class CoreAudioDefaultRouteHardware:
+final class CoreAudioDefaultRouteHardware:
   AudioRouteHardwarePort
 {
   private static let addresses = [
@@ -141,18 +188,36 @@ private final class CoreAudioDefaultRouteHardware:
   private let callbackQueue = DispatchQueue(
     label: "com.aneeshsathe.readyplayertwo.audio-route"
   )
+  private let properties: any AudioRoutePropertyAccessPort
 
   private var listener: AudioObjectPropertyListenerBlock?
   private var installedAddresses: [AudioObjectPropertyAddress] = []
   private var didChange: (@MainActor @Sendable () -> Void)?
 
+  init(
+    properties: any AudioRoutePropertyAccessPort =
+      CoreAudioRoutePropertyAccess()
+  ) {
+    self.properties = properties
+  }
+
   func defaultRoute() throws -> AudioRouteSnapshot {
-    AudioRouteSnapshot(
-      inputDevice: try device(
-        for: kAudioHardwarePropertyDefaultInputDevice
+    let inputDevice = try device(
+      for: kAudioHardwarePropertyDefaultInputDevice
+    )
+    let outputDevice = try device(
+      for: kAudioHardwarePropertyDefaultOutputDevice
+    )
+    return AudioRouteSnapshot(
+      inputDevice: inputDevice,
+      outputDevice: outputDevice,
+      inputDataSource: selectedDataSource(
+        for: inputDevice,
+        scope: kAudioDevicePropertyScopeInput
       ),
-      outputDevice: try device(
-        for: kAudioHardwarePropertyDefaultOutputDevice
+      outputDataSource: selectedDataSource(
+        for: outputDevice,
+        scope: kAudioDevicePropertyScopeOutput
       )
     )
   }
@@ -211,27 +276,36 @@ private final class CoreAudioDefaultRouteHardware:
   private func device(
     for selector: AudioObjectPropertySelector
   ) throws -> AudioDeviceID {
-    var address = AudioObjectPropertyAddress(
-      mSelector: selector,
-      mScope: kAudioObjectPropertyScopeGlobal,
-      mElement: kAudioObjectPropertyElementMain
+    let property = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: selector,
+      scope: kAudioObjectPropertyScopeGlobal
     )
-    var device = AudioDeviceID(kAudioObjectUnknown)
-    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-    let status = AudioObjectGetPropertyData(
-      AudioObjectID(kAudioObjectSystemObject),
-      &address,
-      0,
-      nil,
-      &size,
-      &device
-    )
-    guard status == noErr else {
+    do {
+      return try properties.value(for: property)
+    } catch {
       throw Self.failure(
         "The default audio route could not be read."
       )
     }
-    return device
+  }
+
+  private func selectedDataSource(
+    for device: AudioDeviceID,
+    scope: AudioObjectPropertyScope
+  ) -> UInt32? {
+    guard device != kAudioObjectUnknown else {
+      return nil
+    }
+    let property = AudioRouteProperty(
+      objectID: AudioObjectID(device),
+      selector: kAudioDevicePropertyDataSource,
+      scope: scope
+    )
+    guard properties.hasValue(for: property) else {
+      return nil
+    }
+    return try? properties.value(for: property)
   }
 
   private func remove(
@@ -250,5 +324,95 @@ private final class CoreAudioDefaultRouteHardware:
 
   private static func failure(_ message: String) -> CompanionFailure {
     CompanionFailure(kind: .audioRoute, message: message)
+  }
+}
+
+@MainActor
+private final class CoreAudioRoutePropertyAccess:
+  AudioRoutePropertyAccessPort
+{
+  private struct InstalledObservation {
+    let property: AudioRouteProperty
+    let listener: AudioObjectPropertyListenerBlock
+  }
+
+  private let callbackQueue = DispatchQueue(
+    label: "com.aneeshsathe.readyplayertwo.audio-properties"
+  )
+  private var observations: [AudioRoutePropertyObservation: InstalledObservation] = [:]
+
+  func hasValue(for property: AudioRouteProperty) -> Bool {
+    var address = property.address
+    return AudioObjectHasProperty(property.objectID, &address)
+  }
+
+  func value(for property: AudioRouteProperty) throws -> UInt32 {
+    var address = property.address
+    var value: UInt32 = 0
+    var size = UInt32(MemoryLayout<UInt32>.size)
+    let status = AudioObjectGetPropertyData(
+      property.objectID,
+      &address,
+      0,
+      nil,
+      &size,
+      &value
+    )
+    guard status == noErr else {
+      throw Self.failure()
+    }
+    return value
+  }
+
+  func observe(
+    _ property: AudioRouteProperty,
+    didChange: @escaping @MainActor @Sendable () -> Void
+  ) throws -> AudioRoutePropertyObservation {
+    let listener: AudioObjectPropertyListenerBlock = { _, _ in
+      Task { @MainActor in
+        didChange()
+      }
+    }
+    var address = property.address
+    let status = AudioObjectAddPropertyListenerBlock(
+      property.objectID,
+      &address,
+      callbackQueue,
+      listener
+    )
+    guard status == noErr else {
+      throw Self.failure()
+    }
+
+    let observation = AudioRoutePropertyObservation()
+    observations[observation] = InstalledObservation(
+      property: property,
+      listener: listener
+    )
+    return observation
+  }
+
+  func stopObserving(_ observation: AudioRoutePropertyObservation) {
+    guard
+      let installed = observations.removeValue(
+        forKey: observation
+      )
+    else {
+      return
+    }
+    var address = installed.property.address
+    AudioObjectRemovePropertyListenerBlock(
+      installed.property.objectID,
+      &address,
+      callbackQueue,
+      installed.listener
+    )
+  }
+
+  private static func failure() -> CompanionFailure {
+    CompanionFailure(
+      kind: .audioRoute,
+      message: "An audio hardware property could not be accessed."
+    )
   }
 }
