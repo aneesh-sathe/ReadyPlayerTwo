@@ -204,5 +204,25 @@ rpt_soak_rss_growth_is_unbounded() {
   local first_index=$(( ${#rss_samples} - 11 ))
   local first_rss_kib="$rss_samples[$first_index]"
   local last_rss_kib="$rss_samples[-1]"
-  (( last_rss_kib - first_rss_kib >= 32768 ))
+  integer increasing_intervals=0
+  integer sample_index
+  integer previous_rss_kib="$first_rss_kib"
+  integer current_rss_kib
+  integer rss_delta
+
+  for ((sample_index = first_index + 1;
+    sample_index <= ${#rss_samples};
+    sample_index += 1)); do
+    current_rss_kib="$rss_samples[$sample_index]"
+    rss_delta=$(( current_rss_kib - previous_rss_kib ))
+    if (( rss_delta > 0 )); then
+      increasing_intervals+=1
+    elif (( rss_delta < -1024 )); then
+      return 1
+    fi
+    previous_rss_kib="$current_rss_kib"
+  done
+
+  (( last_rss_kib - first_rss_kib >= 32768 &&
+    increasing_intervals >= 9 ))
 }
