@@ -2,7 +2,10 @@
 
 These ten issues divide V1 into narrow, complete, dependency-ordered slices. Each slice is independently demoable or verifiable and crosses the relevant runtime, platform, presentation, integration, and test boundaries.
 
-GitHub publication is pending integration issue-write permission. Replace each parent placeholder and slice dependency with the real GitHub issue reference when publishing in dependency order.
+Published in GitHub Issues:
+
+- Parent PRD: [#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
+- Slices 1 through 10: [#2](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/2) through [#11](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/11)
 
 ## Dependency graph
 
@@ -32,7 +35,7 @@ Slices 2 and 3 can proceed in parallel after Slice 1. Slices 4, 5, 6, and 7 beco
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -68,7 +71,7 @@ None - can start immediately.
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -102,13 +105,13 @@ Implement the Realtime and broker boundaries behind replaceable production and s
 
 ### Blocked by
 
-- Slice 1: Launch one Dockless Companion
+- [#2](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/2): Launch one Dockless Companion
 
 ## Slice 3: Give Orion polished Roaming Presence
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -140,13 +143,13 @@ The runtime must validate assets before presentation, plan deterministic legal t
 
 ### Blocked by
 
-- Slice 1: Launch one Dockless Companion
+- [#2](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/2): Launch one Dockless Companion
 
 ## Slice 4: Add Athena with state-preserving selection
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -174,14 +177,14 @@ Athena must walk, take off, glide vertically, hover, drift slowly while airborne
 
 ### Blocked by
 
-- Slice 2: Prove a secure summoned voice round trip
-- Slice 3: Give Orion polished Roaming Presence
+- [#3](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/3): Prove a secure summoned voice round trip
+- [#4](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/4): Give Orion polished Roaming Presence
 
 ## Slice 5: Control and Summon the Companion from anywhere
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -212,14 +215,14 @@ Summon must work from Roaming, Parked, and Hidden states. A second Summon during
 
 ### Blocked by
 
-- Slice 2: Prove a secure summoned voice round trip
-- Slice 3: Give Orion polished Roaming Presence
+- [#3](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/3): Prove a secure summoned voice round trip
+- [#4](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/4): Give Orion polished Roaming Presence
 
 ## Slice 6: Keep one Companion reachable across desktop changes
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -251,14 +254,14 @@ Platform lifecycle events must enter through the same runtime Interface. Sleep a
 
 ### Blocked by
 
-- Slice 2: Prove a secure summoned voice round trip
-- Slice 3: Give Orion polished Roaming Presence
+- [#3](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/3): Prove a secure summoned voice round trip
+- [#4](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/4): Give Orion polished Roaming Presence
 
 ## Slice 7: Make Voice Sessions natural and interruptible
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -292,14 +295,14 @@ The waveform must reflect actual input or output energy. Mute, End, first-speech
 
 ### Blocked by
 
-- Slice 2: Prove a secure summoned voice round trip
-- Slice 3: Give Orion polished Roaming Presence
+- [#3](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/3): Prove a secure summoned voice round trip
+- [#4](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/4): Give Orion polished Roaming Presence
 
 ## Slice 8: Recover safely from Voice Session failures
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -331,13 +334,13 @@ Complete privacy-redacted diagnostics and input or output device behavior while 
 
 ### Blocked by
 
-- Slice 7: Make Voice Sessions natural and interruptible
+- [#8](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/8): Make Voice Sessions natural and interruptible
 
 ## Slice 9: Make desktop companionship accessible and visually dependable
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -364,15 +367,15 @@ Reduce Motion must replace autonomous traversal with a calm static presence and 
 
 ### Blocked by
 
-- Slice 4: Add Athena with state-preserving selection
-- Slice 5: Control and Summon the Companion from anywhere
-- Slice 7: Make Voice Sessions natural and interruptible
+- [#5](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/5): Add Athena with state-preserving selection
+- [#6](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/6): Control and Summon the Companion from anywhere
+- [#8](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/8): Make Voice Sessions natural and interruptible
 
 ## Slice 10: Pass packaged V1 acceptance
 
 ### Parent
 
-`<PRD issue>`
+[#1](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/1)
 
 ### User stories covered
 
@@ -406,6 +409,6 @@ Finish concise developer setup, privacy behavior, diagnostics, and troubleshooti
 
 ### Blocked by
 
-- Slice 6: Keep one Companion reachable across desktop changes
-- Slice 8: Recover safely from Voice Session failures
-- Slice 9: Make desktop companionship accessible and visually dependable
+- [#7](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/7): Keep one Companion reachable across desktop changes
+- [#9](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/9): Recover safely from Voice Session failures
+- [#10](https://github.com/aneesh-sathe/ReadyPlayerTwo/issues/10): Make desktop companionship accessible and visually dependable
