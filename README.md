@@ -79,6 +79,9 @@ gates:
 ./scripts/test
 ```
 
+Verified results, environment limits, and every remaining human or live gate
+are tracked in the [V1 acceptance ledger](docs/evaluation/v1-acceptance.md).
+
 Run the real packaged lifecycle smoke without an OpenAI key:
 
 ```sh

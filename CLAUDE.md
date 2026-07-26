@@ -151,6 +151,7 @@
 - `ReadyPlayerTwoPackagedAcceptance` is the opt-in XCUITest scheme. Its `build-for-testing` action compiles under ad hoc signing.
 - Packaged acceptance uses the exact Debug-only `-ReadyPlayerTwoPackagedAcceptance` argument, isolated clean preferences, no global shortcut, no platform monitor, and fixed not-configured voice readiness.
 - This Mac stops XCUITest before test execution with LocalAuthentication code -2. Grant macOS UI-automation authorization or use a trusted signed runner to execute the opt-in suite.
+- This Mac also rejects external `screencapture` desktop inspection with `could not create image from display`. Grant capture access to the test harness for screenshot-based manual evidence; never add that capability to the V1 app.
 
 ## Agent skills
 
@@ -180,3 +181,4 @@ This is a single-context repository with one root glossary and system-wide ADR d
 - Restrict Orion to walking, upward climbing, wall clinging, jumping down, and landing. Hide climb exits behind display edges.
 - Restrict Athena to grounded horizontal walking, vertical gliding, hovering, takeoff, and landing. Use only slow hover drift for airborne horizontal motion.
 - Bridge unavoidable pose discontinuities with short runtime crossfades or occlusion behind the conversation bubble.
+- Use 150-millisecond fades when a motion pose changes, no new fade for an unchanged quiet hold, and a 200-millisecond fade when the selected avatar changes.
