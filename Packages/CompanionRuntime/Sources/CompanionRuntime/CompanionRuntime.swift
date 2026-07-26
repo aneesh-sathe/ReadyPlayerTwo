@@ -35,6 +35,8 @@ public enum CompanionCommand: Equatable, Sendable {
   case setPresence(PresenceState)
   case selectAvatar(CompanionAvatar)
   case retryConversation
+  case drag(to: StagePoint)
+  case moveToCurrentDisplay
 }
 
 public enum VoiceSessionEvent: Equatable, Sendable {
@@ -123,6 +125,18 @@ public struct StageRect: Equatable, Codable, Sendable {
     StagePoint(
       x: origin.x + size.width / 2,
       y: origin.y + size.height / 2
+    )
+  }
+
+  public func clamped(_ point: StagePoint, inset: Double = 0) -> StagePoint {
+    let minimumX = origin.x + inset
+    let minimumY = origin.y + inset
+    let maximumX = max(minimumX, origin.x + size.width - inset)
+    let maximumY = max(minimumY, origin.y + size.height - inset)
+
+    return StagePoint(
+      x: min(max(point.x, minimumX), maximumX),
+      y: min(max(point.y, minimumY), maximumY)
     )
   }
 }
@@ -236,6 +250,7 @@ public final class CompanionRuntime {
     displayID: CompanionDisplay.main.id,
     position: CompanionDisplay.main.visibleFrame.midpoint
   )
+  private var currentDisplay = CompanionDisplay.main
   private var voiceState = VoiceSessionState.idle
   private var bubbleState = BubbleState.hidden
   private var recoverableError: CompanionFailure?
@@ -266,6 +281,7 @@ public final class CompanionRuntime {
     case .launch:
       observeVoiceEventsIfNeeded()
       let display = await platform.displayContainingPointer()
+      currentDisplay = display
       placement = CompanionPlacement(
         displayID: display.id,
         position: display.visibleFrame.midpoint
@@ -311,6 +327,23 @@ public final class CompanionRuntime {
       }
 
       await startVoiceSession()
+
+    case .drag(let position):
+      basePresence = .parked
+      placement = CompanionPlacement(
+        displayID: currentDisplay.id,
+        position: currentDisplay.visibleFrame.clamped(position, inset: 64)
+      )
+      await publish()
+
+    case .moveToCurrentDisplay:
+      let display = await platform.displayContainingPointer()
+      currentDisplay = display
+      placement = CompanionPlacement(
+        displayID: display.id,
+        position: display.visibleFrame.midpoint
+      )
+      await publish()
     }
   }
 

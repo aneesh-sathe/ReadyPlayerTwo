@@ -213,6 +213,56 @@ struct CompanionRuntimeTracerTests {
     #expect(listening.basePresence == .parked)
     #expect(voice.startCount == 2)
   }
+
+  @Test
+  func dragParksWithinBoundsAndMoveUsesThePointerDisplay() async throws {
+    let initialDisplay = CompanionDisplay(
+      id: "built-in",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: 100, y: 50),
+        size: StageSize(width: 1_000, height: 700)
+      ),
+      scaleFactor: 2
+    )
+    let externalDisplay = CompanionDisplay(
+      id: "external",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: -1_440, y: 0),
+        size: StageSize(width: 1_440, height: 900)
+      ),
+      scaleFactor: 1
+    )
+    let platform = MutablePlatform(display: initialDisplay)
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: RecordingStage(),
+      voice: ScriptedVoiceSession(),
+      platform: platform,
+      clock: ImmediateClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+    _ = await snapshots.next()
+    await runtime.send(.drag(to: StagePoint(x: 50, y: 800)))
+
+    let draggedValue = await snapshots.next()
+    let dragged = try #require(draggedValue)
+    #expect(dragged.basePresence == .parked)
+    #expect(dragged.placement.displayID == "built-in")
+    #expect(dragged.placement.position == StagePoint(x: 164, y: 686))
+
+    platform.display = externalDisplay
+    await runtime.send(.moveToCurrentDisplay)
+
+    let movedValue = await snapshots.next()
+    let moved = try #require(movedValue)
+    #expect(moved.basePresence == .parked)
+    #expect(moved.placement.displayID == "external")
+    #expect(moved.placement.position == StagePoint(x: -720, y: 450))
+    #expect(moved.voice == .idle)
+  }
 }
 
 @MainActor
@@ -257,6 +307,19 @@ private final class ScriptedVoiceSession: VoiceSessionPort {
 private struct FixedPlatform: PlatformPort {
   func displayContainingPointer() async -> CompanionDisplay {
     .main
+  }
+}
+
+@MainActor
+private final class MutablePlatform: PlatformPort {
+  var display: CompanionDisplay
+
+  init(display: CompanionDisplay) {
+    self.display = display
+  }
+
+  func displayContainingPointer() async -> CompanionDisplay {
+    display
   }
 }
 
