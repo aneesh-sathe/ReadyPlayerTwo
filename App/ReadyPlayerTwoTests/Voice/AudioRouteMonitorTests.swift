@@ -22,11 +22,17 @@ struct AudioRouteMonitorTests {
       selector: kAudioDevicePropertyDataSource,
       scope: kAudioDevicePropertyScopeInput
     )
+    let outputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(23),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeOutput
+    )
     let properties = ScriptedAudioRouteProperties(
       values: [
         defaultInput: 17,
         defaultOutput: 23,
         inputDataSource: 41,
+        outputDataSource: 43,
       ]
     )
     let hardware = CoreAudioDefaultRouteHardware(properties: properties)
@@ -38,7 +44,12 @@ struct AudioRouteMonitorTests {
 
     #expect(
       Set(properties.observedProperties)
-        == Set([defaultInput, defaultOutput, inputDataSource])
+        == Set([
+          defaultInput,
+          defaultOutput,
+          inputDataSource,
+          outputDataSource,
+        ])
     )
 
     properties.values[inputDataSource] = 47
