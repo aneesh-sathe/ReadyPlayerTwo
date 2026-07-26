@@ -88,6 +88,41 @@ exact captured app and broker processes exited. Stop any existing launcher
 before running it. The command deliberately does not Summon, so it does not
 validate microphone consent or live OpenAI voice.
 
+Run the default two-hour no-key resource and lifecycle soak:
+
+```sh
+./scripts/soak
+```
+
+The soak uses the real supervised launcher and monitors only its exact reported
+launcher, app, and broker processes. It fails on process death, broken lineage,
+a persistent unexpected child, combined resident memory at or above 200 MiB,
+or continuous RSS growth. After a 120-second warm-up, a 12-sample rolling
+window also enforces combined CPU below 5 percent for ordinary Roaming
+Presence.
+
+Use a validated duration from 1 through 86400 seconds for a short harness check:
+
+```sh
+RPT_SOAK_DURATION_SECONDS=15 ./scripts/soak
+```
+
+Runs shorter than 180 seconds validate lifecycle, metric collection, resident
+memory, and teardown. They do not prove settled CPU, continuous RSS stability,
+or the two-hour acceptance criterion.
+
+To evaluate the 2 percent Park CPU ceiling, declare the expected presence and
+manually choose Park from the Status Menu within the 120-second warm-up:
+
+```sh
+RPT_SOAK_EXPECTED_PRESENCE=park ./scripts/soak
+```
+
+The harness cannot change or verify Park without macOS UI automation
+authorization, so this remains an operator-controlled test. The soak never
+Summons, removes `OPENAI_API_KEY`, stores no metrics report, and emits only
+process resource summaries.
+
 Live voice quality, microphone consent, multi-display behavior, and visual
 polish still require testing on the target Mac. A trusted local signing identity
 is recommended for stable microphone permission across rebuilds:
