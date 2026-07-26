@@ -4,5 +4,345 @@ set -euo pipefail
 
 source "${0:A:h}/lib.zsh"
 source "${0:A:h}/soak-lib.zsh"
+source "${0:A:h}/smoke-lib.zsh"
 
 soak_duration_seconds="$(rpt_soak_duration_seconds)"
+
+if (( $# != 0 )); then
+  rpt_die "Set RPT_SOAK_DURATION_SECONDS instead of passing command arguments."
+fi
+
+[[ "$(uname -s)" == "Darwin" ]] ||
+  rpt_die "The packaged lifecycle soak requires macOS."
+
+rpt_require_command pgrep "This command is supplied by macOS."
+rpt_require_command ps "This command is supplied by macOS."
+rpt_prepare_build_directories
+
+if ! /usr/bin/lockf -s -k -t 0 "$RPT_RUNTIME_ROOT/launcher.lock" true; then
+  rpt_die "Stop the active ReadyPlayerTwo launcher before running the soak."
+fi
+
+umask 077
+soak_directory="$(mktemp -d "$RPT_RUNTIME_ROOT/soak.XXXXXXXX")"
+lifecycle_report="$soak_directory/lifecycle"
+launch_log="$soak_directory/launch.log"
+
+integer launch_supervisor_pid=0
+integer lifecycle_launcher_pid=0
+integer lifecycle_broker_pid=0
+integer lifecycle_app_pid=0
+integer soak_completed=0
+
+process_is_running() {
+  local process_id="$1"
+  (( process_id > 0 )) && kill -0 "$process_id" 2>/dev/null
+}
+
+wait_for_process_exit() {
+  local process_id="$1"
+  local process_name="$2"
+  local attempt
+
+  for attempt in {1..100}; do
+    if ! process_is_running "$process_id"; then
+      return
+    fi
+    sleep 0.1
+  done
+
+  rpt_die "$process_name remained alive after supervised teardown."
+}
+
+stop_exact_process() {
+  local process_id="$1"
+  local process_name="$2"
+
+  if ! process_is_running "$process_id"; then
+    return
+  fi
+
+  kill -TERM "$process_id" 2>/dev/null || true
+  local attempt
+  for attempt in {1..50}; do
+    if ! process_is_running "$process_id"; then
+      return
+    fi
+    sleep 0.1
+  done
+
+  rpt_warn "$process_name did not stop during soak cleanup."
+  kill -KILL "$process_id" 2>/dev/null || true
+}
+
+cleanup() {
+  local exit_status="$?"
+  trap - EXIT INT TERM
+
+  if (( ! soak_completed )); then
+    stop_exact_process "$lifecycle_launcher_pid" "captured launcher"
+    stop_exact_process "$lifecycle_app_pid" "captured app"
+    stop_exact_process "$lifecycle_broker_pid" "captured broker"
+    stop_exact_process "$launch_supervisor_pid" "soak launch supervisor"
+  fi
+
+  if (( launch_supervisor_pid > 0 )); then
+    wait "$launch_supervisor_pid" 2>/dev/null || true
+  fi
+
+  [[ ! -f "$lifecycle_report" ]] || rm -f "$lifecycle_report"
+  [[ ! -f "$launch_log" ]] || rm -f "$launch_log"
+  rmdir "$soak_directory" 2>/dev/null || true
+  exit "$exit_status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+rpt_note "Starting the real no-key packaged launcher..."
+env \
+  -u OPENAI_API_KEY \
+  "RPT_LIFECYCLE_REPORT_PATH=$lifecycle_report" \
+  "$RPT_SCRIPT_DIR/run" \
+  >"$launch_log" 2>&1 &
+launch_supervisor_pid=$!
+
+for attempt in {1..2400}; do
+  if [[ -f "$lifecycle_report" ]]; then
+    break
+  fi
+  if ! process_is_running "$launch_supervisor_pid"; then
+    set +e
+    wait "$launch_supervisor_pid"
+    launcher_status="$?"
+    set -e
+    launch_supervisor_pid=0
+    rpt_die "The launcher exited before the packaged app became ready (status $launcher_status)."
+  fi
+  sleep 0.25
+done
+[[ -f "$lifecycle_report" ]] ||
+  rpt_die "The packaged app did not become ready within ten minutes."
+
+rpt_smoke_read_lifecycle_report "$lifecycle_report"
+lifecycle_launcher_pid="$RPT_SMOKE_LAUNCHER_PID"
+lifecycle_broker_pid="$RPT_SMOKE_BROKER_PID"
+lifecycle_app_pid="$RPT_SMOKE_APP_PID"
+
+sleep 1
+rpt_soak_verify_lineage \
+  "$lifecycle_launcher_pid" \
+  "$lifecycle_broker_pid" \
+  "$lifecycle_app_pid"
+
+grep -Fqx \
+  "warning: OPENAI_API_KEY is absent. Voice will report Voice Not Configured." \
+  "$launch_log" ||
+  rpt_die "The soak launcher did not confirm the no-key voice path."
+
+integer sample_interval_seconds=5
+if (( soak_duration_seconds < 60 )); then
+  sample_interval_seconds=1
+fi
+
+integer sample_count=0
+integer launcher_rss_start_kib=0
+integer launcher_rss_peak_kib=0
+integer launcher_rss_end_kib=0
+integer broker_rss_start_kib=0
+integer broker_rss_peak_kib=0
+integer broker_rss_end_kib=0
+integer app_rss_start_kib=0
+integer app_rss_peak_kib=0
+integer app_rss_end_kib=0
+typeset -F 3 launcher_cpu_sum=0
+typeset -F 3 launcher_cpu_peak=0
+typeset -F 3 broker_cpu_sum=0
+typeset -F 3 broker_cpu_peak=0
+typeset -F 3 app_cpu_sum=0
+typeset -F 3 app_cpu_peak=0
+typeset -a launcher_rss_window
+typeset -a broker_rss_window
+typeset -a app_rss_window
+launcher_rss_window=()
+broker_rss_window=()
+app_rss_window=()
+
+record_process_metrics() {
+  local process_role="$1"
+  local process_sample="$2"
+  local -a sample_fields
+  sample_fields=("${(@s: :)process_sample}")
+  local cpu_percent="$sample_fields[3]"
+  local rss_kib="$sample_fields[4]"
+
+  case "$process_role" in
+    launcher)
+      if (( sample_count == 0 )); then
+        launcher_rss_start_kib="$rss_kib"
+      fi
+      launcher_rss_end_kib="$rss_kib"
+      if (( rss_kib > launcher_rss_peak_kib )); then
+        launcher_rss_peak_kib="$rss_kib"
+      fi
+      launcher_cpu_sum=$(( launcher_cpu_sum + cpu_percent ))
+      if (( cpu_percent > launcher_cpu_peak )); then
+        launcher_cpu_peak="$cpu_percent"
+      fi
+      ;;
+    broker)
+      if (( sample_count == 0 )); then
+        broker_rss_start_kib="$rss_kib"
+      fi
+      broker_rss_end_kib="$rss_kib"
+      if (( rss_kib > broker_rss_peak_kib )); then
+        broker_rss_peak_kib="$rss_kib"
+      fi
+      broker_cpu_sum=$(( broker_cpu_sum + cpu_percent ))
+      if (( cpu_percent > broker_cpu_peak )); then
+        broker_cpu_peak="$cpu_percent"
+      fi
+      ;;
+    app)
+      if (( sample_count == 0 )); then
+        app_rss_start_kib="$rss_kib"
+      fi
+      app_rss_end_kib="$rss_kib"
+      if (( rss_kib > app_rss_peak_kib )); then
+        app_rss_peak_kib="$rss_kib"
+      fi
+      app_cpu_sum=$(( app_cpu_sum + cpu_percent ))
+      if (( cpu_percent > app_cpu_peak )); then
+        app_cpu_peak="$cpu_percent"
+      fi
+      ;;
+    *)
+      rpt_die "An unknown soak process role was sampled."
+      ;;
+  esac
+}
+
+rpt_note \
+  "Monitoring launcher, app, and broker for $soak_duration_seconds seconds."
+rpt_warn \
+  "The harness observes default Roaming Presence. Park selection remains a manual check."
+if (( soak_duration_seconds < 180 )); then
+  rpt_warn \
+    "Runs shorter than 180 seconds validate lifecycle and metrics, not the RSS growth rule."
+fi
+
+previous_unexpected_children=""
+SECONDS=0
+while (( SECONDS < soak_duration_seconds )); do
+  elapsed_seconds="$SECONDS"
+  rpt_soak_verify_lineage \
+    "$lifecycle_launcher_pid" \
+    "$lifecycle_broker_pid" \
+    "$lifecycle_app_pid"
+
+  launcher_sample="$(
+    rpt_soak_sample_process "$lifecycle_launcher_pid"
+  )"
+  broker_sample="$(
+    rpt_soak_sample_process "$lifecycle_broker_pid"
+  )"
+  app_sample="$(
+    rpt_soak_sample_process "$lifecycle_app_pid"
+  )"
+  record_process_metrics launcher "$launcher_sample"
+  record_process_metrics broker "$broker_sample"
+  record_process_metrics app "$app_sample"
+
+  current_unexpected_children="$(
+    rpt_soak_unexpected_children \
+      "$lifecycle_launcher_pid" \
+      "$lifecycle_broker_pid" \
+      "$lifecycle_app_pid"
+  )"
+  persistent_unexpected_children="$(
+    rpt_soak_persistent_unexpected_children \
+      "$previous_unexpected_children" \
+      "$current_unexpected_children"
+  )"
+  [[ -z "$persistent_unexpected_children" ]] ||
+    rpt_die "A supervised process retained an unexpected child."
+  previous_unexpected_children="$current_unexpected_children"
+
+  if (( elapsed_seconds >= 120 )); then
+    launcher_fields=("${(@s: :)launcher_sample}")
+    broker_fields=("${(@s: :)broker_sample}")
+    app_fields=("${(@s: :)app_sample}")
+    launcher_rss_window+=("$launcher_fields[4]")
+    broker_rss_window+=("$broker_fields[4]")
+    app_rss_window+=("$app_fields[4]")
+
+    if rpt_soak_rss_growth_is_unbounded "${launcher_rss_window[@]}"; then
+      rpt_die "The launcher showed continuous unbounded RSS growth."
+    fi
+    if rpt_soak_rss_growth_is_unbounded "${broker_rss_window[@]}"; then
+      rpt_die "The broker showed continuous unbounded RSS growth."
+    fi
+    if rpt_soak_rss_growth_is_unbounded "${app_rss_window[@]}"; then
+      rpt_die "The app showed continuous unbounded RSS growth."
+    fi
+  fi
+
+  sample_count+=1
+  remaining_seconds=$(( soak_duration_seconds - SECONDS ))
+  if (( remaining_seconds <= 0 )); then
+    break
+  fi
+  sleep_seconds="$sample_interval_seconds"
+  if (( remaining_seconds < sleep_seconds )); then
+    sleep_seconds="$remaining_seconds"
+  fi
+  sleep "$sleep_seconds"
+done
+
+(( sample_count > 0 )) ||
+  rpt_die "The soak did not collect any process metrics."
+
+typeset -F 3 launcher_cpu_average=$(( launcher_cpu_sum / sample_count ))
+typeset -F 3 broker_cpu_average=$(( broker_cpu_sum / sample_count ))
+typeset -F 3 app_cpu_average=$(( app_cpu_sum / sample_count ))
+
+rpt_note "Collected $sample_count safe process-only metric samples."
+printf \
+  'launcher cpu_average_percent=%.3f cpu_peak_percent=%.3f rss_start_kib=%d rss_peak_kib=%d rss_end_kib=%d\n' \
+  "$launcher_cpu_average" \
+  "$launcher_cpu_peak" \
+  "$launcher_rss_start_kib" \
+  "$launcher_rss_peak_kib" \
+  "$launcher_rss_end_kib"
+printf \
+  'broker cpu_average_percent=%.3f cpu_peak_percent=%.3f rss_start_kib=%d rss_peak_kib=%d rss_end_kib=%d\n' \
+  "$broker_cpu_average" \
+  "$broker_cpu_peak" \
+  "$broker_rss_start_kib" \
+  "$broker_rss_peak_kib" \
+  "$broker_rss_end_kib"
+printf \
+  'app cpu_average_percent=%.3f cpu_peak_percent=%.3f rss_start_kib=%d rss_peak_kib=%d rss_end_kib=%d\n' \
+  "$app_cpu_average" \
+  "$app_cpu_peak" \
+  "$app_rss_start_kib" \
+  "$app_rss_peak_kib" \
+  "$app_rss_end_kib"
+
+rpt_note "Interrupting the captured launcher..."
+kill -INT "$lifecycle_launcher_pid"
+set +e
+wait "$launch_supervisor_pid"
+launcher_status="$?"
+set -e
+launch_supervisor_pid=0
+[[ "$launcher_status" == "130" ]] ||
+  rpt_die "The interrupted launcher exited with status $launcher_status instead of 130."
+
+wait_for_process_exit "$lifecycle_launcher_pid" "The captured launcher"
+wait_for_process_exit "$lifecycle_app_pid" "The captured app"
+wait_for_process_exit "$lifecycle_broker_pid" "The captured broker"
+
+soak_completed=1
+rpt_note "Packaged lifecycle soak passed."
