@@ -276,6 +276,9 @@ final class CoreAudioDefaultRouteHardware:
   }
 
   private func defaultRouteDidChange() {
+    guard didChange != nil else {
+      return
+    }
     do {
       let route = try defaultRoute()
       if route.inputDevice != observedRoute?.inputDevice
