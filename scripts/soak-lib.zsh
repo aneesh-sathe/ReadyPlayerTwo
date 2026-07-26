@@ -13,6 +13,17 @@ rpt_soak_duration_seconds() {
   printf '%s\n' "$candidate"
 }
 
+rpt_soak_expected_presence() {
+  local candidate="${RPT_SOAK_EXPECTED_PRESENCE:-roam}"
+
+  if [[ "$candidate" != "roam" && "$candidate" != "park" ]]; then
+    rpt_die "RPT_SOAK_EXPECTED_PRESENCE must be roam or park."
+    return
+  fi
+
+  printf '%s\n' "$candidate"
+}
+
 rpt_soak_sample_process() {
   local process_id="$1"
 
