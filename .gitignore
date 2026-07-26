@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+.env
+.env.*
+!.env.example
+DerivedData/
+node_modules/
+*.xcresult
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
