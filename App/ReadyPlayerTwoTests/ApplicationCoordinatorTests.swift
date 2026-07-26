@@ -125,6 +125,53 @@ struct ApplicationCoordinatorTests {
     )
   }
 
+  @Test
+  func snapshotChangesPersistOnlySafeInterfacePreferences() async {
+    let initialPreferences = LocalInterfacePreferences(
+      avatar: .orion,
+      presence: .roaming,
+      voiceIdentifier: "marin",
+      modelIdentifier: "gpt-realtime-2.1",
+      volume: 0.65,
+      shortcut: GlobalShortcut(
+        keyCode: 1,
+        modifiers: [.command, .shift]
+      ),
+      parkedPosition: nil
+    )
+    let store = RecordingPreferencesStore(preferences: initialPreferences)
+    let runtime = RecordingRuntime()
+    let coordinator = ApplicationCoordinator(
+      runtime: runtime,
+      statusMenu: RecordingStatusMenu(),
+      application: RecordingApplication(),
+      preferencesStore: store,
+      initialPreferences: initialPreferences
+    )
+
+    await coordinator.start()
+    runtime.emit(snapshot())
+    await drainTasks()
+    #expect(store.savedPreferences.isEmpty)
+
+    runtime.emit(snapshot(avatar: .athena, presence: .parked))
+    await drainTasks()
+
+    #expect(store.savedPreferences.count == 1)
+    #expect(store.savedPreferences[0].avatar == .athena)
+    #expect(store.savedPreferences[0].presence == .parked)
+    #expect(store.savedPreferences[0].voiceIdentifier == "marin")
+    #expect(store.savedPreferences[0].modelIdentifier == "gpt-realtime-2.1")
+    #expect(store.savedPreferences[0].volume == 0.65)
+    #expect(
+      store.savedPreferences[0].shortcut
+        == GlobalShortcut(
+          keyCode: 1,
+          modifiers: [.command, .shift]
+        )
+    )
+  }
+
   private func snapshot(
     avatar: CompanionAvatar = .orion,
     presence: PresenceState = .roaming,
@@ -198,5 +245,28 @@ private final class RecordingApplication: ApplicationTerminating {
 
   func terminateApplication() {
     terminationCount += 1
+  }
+}
+
+@MainActor
+private final class RecordingPreferencesStore: InterfacePreferencesStoring {
+  private(set) var preferences: LocalInterfacePreferences
+  private(set) var savedPreferences: [LocalInterfacePreferences] = []
+
+  init(preferences: LocalInterfacePreferences) {
+    self.preferences = preferences
+  }
+
+  func load() -> LocalInterfacePreferences {
+    preferences
+  }
+
+  func save(_ preferences: LocalInterfacePreferences) throws {
+    self.preferences = preferences
+    savedPreferences.append(preferences)
+  }
+
+  func clear() {
+    preferences = .defaults
   }
 }

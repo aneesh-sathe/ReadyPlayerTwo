@@ -44,18 +44,26 @@ final class ApplicationCoordinator {
   private let runtime: any CompanionCommandRouting
   private let statusMenu: any StatusMenuPresenting
   private let application: any ApplicationTerminating
+  private let preferencesStore: (any InterfacePreferencesStoring)?
   private var hasStarted = false
   private var latestSnapshot: CompanionSnapshot?
+  private var persistedPreferences: LocalInterfacePreferences?
   private var snapshotTask: Task<Void, Never>?
 
   init(
     runtime: any CompanionCommandRouting,
     statusMenu: any StatusMenuPresenting,
-    application: any ApplicationTerminating
+    application: any ApplicationTerminating,
+    preferencesStore: (any InterfacePreferencesStoring)? = nil,
+    initialPreferences: LocalInterfacePreferences? = nil
   ) {
     self.runtime = runtime
     self.statusMenu = statusMenu
     self.application = application
+    self.preferencesStore = preferencesStore
+    persistedPreferences =
+      initialPreferences
+      ?? preferencesStore?.load()
   }
 
   func start() async {
@@ -130,6 +138,7 @@ final class ApplicationCoordinator {
         }
         latestSnapshot = snapshot
         statusMenu.render(snapshot)
+        persistInterfacePreferences(from: snapshot)
       }
     }
 
@@ -165,6 +174,36 @@ final class ApplicationCoordinator {
     case .connecting, .listening, .thinking, .speaking:
       await runtime.send(.setMuted(true))
     case .idle, .error, .ending:
+      return
+    }
+  }
+
+  private func persistInterfacePreferences(
+    from snapshot: CompanionSnapshot
+  ) {
+    guard
+      let preferencesStore,
+      let current = persistedPreferences,
+      current.avatar != snapshot.avatar
+        || current.presence != snapshot.basePresence
+    else {
+      return
+    }
+
+    let updated = LocalInterfacePreferences(
+      avatar: snapshot.avatar,
+      presence: snapshot.basePresence,
+      voiceIdentifier: current.voiceIdentifier,
+      modelIdentifier: current.modelIdentifier,
+      volume: current.volume,
+      shortcut: current.shortcut,
+      parkedPosition: current.parkedPosition
+    )
+
+    do {
+      try preferencesStore.save(updated)
+      persistedPreferences = updated
+    } catch {
       return
     }
   }
