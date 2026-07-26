@@ -7,6 +7,12 @@ source "${0:A:h}/soak-lib.zsh"
 source "${0:A:h}/smoke-lib.zsh"
 
 soak_duration_seconds="$(rpt_soak_duration_seconds)"
+expected_presence="$(rpt_soak_expected_presence)"
+typeset -F 1 cpu_limit_percent=5
+if [[ "$expected_presence" == "park" ]]; then
+  cpu_limit_percent=2
+fi
+integer resident_memory_limit_kib=204800
 
 if (( $# != 0 )); then
   rpt_die "Set RPT_SOAK_DURATION_SECONDS instead of passing command arguments."
@@ -165,9 +171,14 @@ typeset -F 3 app_cpu_peak=0
 typeset -a launcher_rss_window
 typeset -a broker_rss_window
 typeset -a app_rss_window
+typeset -a combined_cpu_window
 launcher_rss_window=()
 broker_rss_window=()
 app_rss_window=()
+combined_cpu_window=()
+typeset -F 3 combined_cpu_percent=0
+integer cpu_policy_evaluated=0
+integer rss_growth_policy_evaluated=0
 
 record_process_metrics() {
   local process_role="$1"
@@ -225,11 +236,15 @@ record_process_metrics() {
 
 rpt_note \
   "Monitoring launcher, app, and broker for $soak_duration_seconds seconds."
-rpt_warn \
-  "The harness observes default Roaming Presence. Park selection remains a manual check."
+if [[ "$expected_presence" == "park" ]]; then
+  rpt_warn \
+    "Select Park manually within 120 seconds. The harness cannot change or verify presence."
+else
+  rpt_note "Applying the ordinary Roaming Presence CPU policy."
+fi
 if (( soak_duration_seconds < 180 )); then
   rpt_warn \
-    "Runs shorter than 180 seconds validate lifecycle and metrics, not the RSS growth rule."
+    "Runs shorter than 180 seconds do not evaluate settled CPU or continuous RSS growth."
 fi
 
 previous_unexpected_children=""
@@ -250,9 +265,20 @@ while (( SECONDS < soak_duration_seconds )); do
   app_sample="$(
     rpt_soak_sample_process "$lifecycle_app_pid"
   )"
+  launcher_fields=("${(@s: :)launcher_sample}")
+  broker_fields=("${(@s: :)broker_sample}")
+  app_fields=("${(@s: :)app_sample}")
   record_process_metrics launcher "$launcher_sample"
   record_process_metrics broker "$broker_sample"
   record_process_metrics app "$app_sample"
+
+  if rpt_soak_resident_memory_exceeds_limit \
+    "$resident_memory_limit_kib" \
+    "$launcher_fields[4]" \
+    "$broker_fields[4]" \
+    "$app_fields[4]"; then
+    rpt_die "Combined resident memory reached the 200 MiB ceiling."
+  fi
 
   current_unexpected_children="$(
     rpt_soak_unexpected_children \
@@ -270,13 +296,29 @@ while (( SECONDS < soak_duration_seconds )); do
   previous_unexpected_children="$current_unexpected_children"
 
   if (( elapsed_seconds >= 120 )); then
-    launcher_fields=("${(@s: :)launcher_sample}")
-    broker_fields=("${(@s: :)broker_sample}")
-    app_fields=("${(@s: :)app_sample}")
+    combined_cpu_percent=$((
+      launcher_fields[3] +
+      broker_fields[3] +
+      app_fields[3]
+    ))
+    combined_cpu_window+=("$combined_cpu_percent")
     launcher_rss_window+=("$launcher_fields[4]")
     broker_rss_window+=("$broker_fields[4]")
     app_rss_window+=("$app_fields[4]")
 
+    if (( ${#combined_cpu_window} >= 12 )); then
+      cpu_policy_evaluated=1
+    fi
+    if rpt_soak_cpu_window_exceeds_limit \
+      "$cpu_limit_percent" \
+      "${combined_cpu_window[@]}"; then
+      rpt_die \
+        "Combined $expected_presence CPU reached its sustained ceiling."
+    fi
+
+    if (( ${#launcher_rss_window} >= 12 )); then
+      rss_growth_policy_evaluated=1
+    fi
     if rpt_soak_rss_growth_is_unbounded "${launcher_rss_window[@]}"; then
       rpt_die "The launcher showed continuous unbounded RSS growth."
     fi
@@ -308,6 +350,13 @@ typeset -F 3 broker_cpu_average=$(( broker_cpu_sum / sample_count ))
 typeset -F 3 app_cpu_average=$(( app_cpu_sum / sample_count ))
 
 rpt_note "Collected $sample_count safe process-only metric samples."
+printf \
+  'policy expected_presence=%s cpu_limit_percent=%.1f resident_limit_kib=%d cpu_policy_evaluated=%s rss_growth_policy_evaluated=%s\n' \
+  "$expected_presence" \
+  "$cpu_limit_percent" \
+  "$resident_memory_limit_kib" \
+  "$([[ "$cpu_policy_evaluated" == "1" ]] && printf yes || printf no)" \
+  "$([[ "$rss_growth_policy_evaluated" == "1" ]] && printf yes || printf no)"
 printf \
   'launcher cpu_average_percent=%.3f cpu_peak_percent=%.3f rss_start_kib=%d rss_peak_kib=%d rss_end_kib=%d\n' \
   "$launcher_cpu_average" \
