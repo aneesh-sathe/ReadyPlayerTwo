@@ -39,6 +39,21 @@ if rpt_soak_duration_seconds >/dev/null 2>&1; then
   rpt_die "A non-positive soak duration must be rejected."
 fi
 
+unset RPT_SOAK_EXPECTED_PRESENCE
+default_presence="$(rpt_soak_expected_presence)"
+[[ "$default_presence" == "roam" ]] ||
+  rpt_die "The soak must default to ordinary Roaming Presence."
+
+RPT_SOAK_EXPECTED_PRESENCE=park
+park_presence="$(rpt_soak_expected_presence)"
+[[ "$park_presence" == "park" ]] ||
+  rpt_die "The soak must accept an explicit manual Park expectation."
+
+RPT_SOAK_EXPECTED_PRESENCE=unknown
+if rpt_soak_expected_presence >/dev/null 2>&1; then
+  rpt_die "An unknown expected presence must be rejected."
+fi
+
 /bin/sleep 30 &
 sampled_process_pid=$!
 process_sample="$(rpt_soak_sample_process "$sampled_process_pid")"
