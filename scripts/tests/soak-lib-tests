@@ -95,4 +95,20 @@ rpt_soak_rss_growth_is_unbounded \
   145056 ||
   rpt_die "Large sustained RSS growth must fail the soak."
 
+if rpt_soak_rss_growth_is_unbounded \
+  100000 \
+  145000 \
+  145000 \
+  145000 \
+  145000 \
+  145000 \
+  145000 \
+  145000 \
+  145000 \
+  145000 \
+  145000 \
+  145000; then
+  rpt_die "A bounded one-time RSS allocation must not fail the soak."
+fi
+
 rpt_note "Soak library tests passed."
