@@ -80,4 +80,19 @@ persistent_children="$(
 [[ "$persistent_children" == "202" ]] ||
   rpt_die "Only a child that survives consecutive samples may fail the soak."
 
+rpt_soak_rss_growth_is_unbounded \
+  100000 \
+  104096 \
+  108192 \
+  112288 \
+  116384 \
+  120480 \
+  124576 \
+  128672 \
+  132768 \
+  136864 \
+  140960 \
+  145056 ||
+  rpt_die "Large sustained RSS growth must fail the soak."
+
 rpt_note "Soak library tests passed."
