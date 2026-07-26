@@ -125,9 +125,12 @@ screen cache, screenshot path, OCR path, or application-content log.
 - The first-speech deadline is 60 seconds. After accepted speech, the rolling
   inactivity deadline is 120 seconds and is reset when the runtime enters
   Thinking.
-- Sleep, lock, screen saver, Mission Control suppression, Hide during voice,
-  End, Quit, handled transport failure, and inactivity timeout stop the active
-  session. Wake and unlock never reconnect it.
+- Sleep, lock, screen saver, Hide during voice, End, Quit, handled transport
+  failure, and inactivity timeout stop the active session. Wake and unlock
+  never reconnect it.
+- AppKit exposes no public Mission Control start or end notification. Active
+  Space changes refresh placement, but V1 cannot guarantee Mission Control
+  suppression without a separate manual platform validation.
 
 The product indicator communicates application state. It is not a security
 boundary and cannot replace the operating system's own microphone controls or
@@ -213,7 +216,8 @@ zero-retention or provider-deletion claim.
 | Other OpenAI response or broker-to-provider network failure | The broker exposes no upstream body or exception text and returns status 502 with `upstream_unavailable`. |
 | SDP, data-channel, peer, server, or network failure | Local audio is disabled; statistics stop; channel and peer close; error remains nonspoken and recoverable. |
 | End, Hide during voice, platform suppression, or inactivity timeout | Runtime enters Ending, invokes voice stop once for that active generation, and returns to a non-listening state. |
-| Sleep, lock, screen saver, or Mission Control | Stage is suppressed and active voice ends. A later platform resume does not restart voice. |
+| Sleep, lock, or screen saver | Stage is suppressed and active voice ends. A later platform resume does not restart voice. |
+| Mission Control | AppKit provides no public start or end lifecycle event. V1 does not synthesize one or claim automatic suppression; validate visible and input behavior manually on each target macOS release. |
 | Broker exits unexpectedly | Launcher stops the exact app child and exits with failure. |
 | Terminal interrupt or normal app exit | Launcher stops remaining exact child processes and normally removes its runtime file and directory. |
 
