@@ -310,7 +310,13 @@ public final class CompanionRuntime {
       await publish()
 
     case .summon:
-      guard voiceState == .idle, !stageSuppressed else {
+      guard !stageSuppressed else {
+        return
+      }
+
+      await relocateToPointerDisplayIfNeeded()
+      guard voiceState == .idle else {
+        await publish()
         return
       }
 
@@ -397,6 +403,19 @@ public final class CompanionRuntime {
       waveformEnergy = 0
       await publish()
     }
+  }
+
+  private func relocateToPointerDisplayIfNeeded() async {
+    let display = await platform.displayContainingPointer()
+    guard display.id != currentDisplay.id else {
+      return
+    }
+
+    currentDisplay = display
+    placement = CompanionPlacement(
+      displayID: display.id,
+      position: display.visibleFrame.midpoint
+    )
   }
 
   private func handlePlatformEvent(_ event: PlatformEvent) async {

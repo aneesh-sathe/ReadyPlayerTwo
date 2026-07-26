@@ -265,6 +265,63 @@ struct CompanionRuntimeTracerTests {
   }
 
   @Test
+  func summonRelocatesOneSessionToThePointerDisplay() async throws {
+    let initialDisplay = CompanionDisplay(
+      id: "built-in",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: 0, y: 0),
+        size: StageSize(width: 1_200, height: 800)
+      ),
+      scaleFactor: 2
+    )
+    let externalDisplay = CompanionDisplay(
+      id: "external",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: -1_600, y: 100),
+        size: StageSize(width: 1_600, height: 900)
+      ),
+      scaleFactor: 1
+    )
+    let platform = MutablePlatform(display: initialDisplay)
+    let voice = ScriptedVoiceSession()
+    let stage = RecordingStage()
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: stage,
+      voice: voice,
+      platform: platform,
+      clock: ImmediateClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+    _ = await snapshots.next()
+
+    platform.display = externalDisplay
+    await runtime.send(.summon(.keyboardShortcut))
+
+    let connectingValue = await snapshots.next()
+    let connecting = try #require(connectingValue)
+    #expect(connecting.placement.displayID == "external")
+    #expect(connecting.placement.position == StagePoint(x: -800, y: 550))
+    #expect(connecting.voice == .connecting)
+    #expect(voice.startCount == 1)
+
+    voice.emit(.listening)
+    _ = await snapshots.next()
+
+    platform.display = initialDisplay
+    await runtime.send(.summon(.statusMenu))
+
+    let revealed = try #require(stage.renderedSnapshots.last)
+    #expect(revealed.placement.displayID == "built-in")
+    #expect(revealed.placement.position == StagePoint(x: 600, y: 400))
+    #expect(revealed.voice == .listening)
+    #expect(voice.startCount == 1)
+  }
+
+  @Test
   func sleepEndsVoiceAndWakeNeverReconnects() async throws {
     let voice = ScriptedVoiceSession()
     let runtime = CompanionRuntime(
