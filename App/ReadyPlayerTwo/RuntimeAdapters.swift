@@ -5,20 +5,60 @@ import CompanionRuntime
 final class UnavailableVoiceSession: VoiceSessionPort {
   let events: AsyncStream<VoiceSessionEvent>
 
-  init() {
+  private let failure: CompanionFailure
+
+  init(
+    failure: CompanionFailure = CompanionFailure(
+      kind: .voiceNotConfigured,
+      message: "Voice is not configured in this build."
+    )
+  ) {
+    self.failure = failure
     events = AsyncStream { _ in }
   }
 
   func start() async throws {
-    throw CompanionFailure(
-      kind: .voiceNotConfigured,
-      message: "Voice is not configured in this build."
-    )
+    throw failure
   }
 
   func stop() async {}
 
   func setMuted(_ isMuted: Bool) async {}
+}
+
+@MainActor
+enum ProductionVoiceSessionFactory {
+  private static let configuredKey =
+    "READYPLAYERTWO_VOICE_CONFIGURED"
+
+  static func make(
+    environment: [String: String] = ProcessInfo.processInfo.environment,
+    configuration: RealtimeVoiceConfiguration = .companionV1
+  ) -> any VoiceSessionPort {
+    guard environment[configuredKey] == "1" else {
+      return UnavailableVoiceSession()
+    }
+
+    do {
+      let broker = try BrokerClient(
+        environment: environment,
+        configuration: configuration
+      )
+      let transport = try WebRTCRealtimeTransport()
+      return OpenAIRealtimeVoiceSession(
+        broker: broker,
+        transport: transport,
+        configuration: configuration
+      )
+    } catch {
+      return UnavailableVoiceSession(
+        failure: CompanionFailure(
+          kind: .voiceNotConfigured,
+          message: "Voice configuration is incomplete."
+        )
+      )
+    }
+  }
 }
 
 @MainActor

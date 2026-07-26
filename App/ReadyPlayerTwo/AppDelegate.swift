@@ -9,11 +9,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
 
+    let preferencesStore = UserDefaultsInterfacePreferencesStore()
+    let preferences = preferencesStore.load()
+    let defaultVoice = RealtimeVoiceConfiguration.companionV1
+    let voiceConfiguration = RealtimeVoiceConfiguration(
+      model: preferences.modelIdentifier ?? defaultVoice.model,
+      voice: preferences.voiceIdentifier ?? defaultVoice.voice,
+      instructions: defaultVoice.instructions
+    )
     let stage = CompanionStage(bundle: .main)
     let runtime = CompanionRuntime(
-      initialPreferences: CompanionPreferences(),
+      initialPreferences: CompanionPreferences(
+        avatar: preferences.avatar,
+        presence: preferences.presence
+      ),
       stage: stage,
-      voice: UnavailableVoiceSession(),
+      voice: ProductionVoiceSessionFactory.make(
+        configuration: voiceConfiguration
+      ),
       platform: MacPlatform(),
       clock: SystemRuntimeClock(),
       randomness: SystemRandomSource()
@@ -21,9 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let coordinator = ApplicationCoordinator(
       runtime: runtime,
       statusMenu: StatusMenuController(),
-      application: NSApplication.shared
+      application: NSApplication.shared,
+      preferencesStore: preferencesStore,
+      initialPreferences: preferences
     )
-
     self.coordinator = coordinator
 
     Task {

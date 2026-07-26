@@ -153,6 +153,56 @@ struct OpenAIRealtimeVoiceSessionTests {
   }
 }
 
+@Suite(.serialized)
+@MainActor
+struct ProductionVoiceSessionFactoryTests {
+  @Test
+  func missingConfigurationFailsBeforeConstructingCapture() async {
+    let session = ProductionVoiceSessionFactory.make(environment: [:])
+
+    do {
+      try await session.start()
+      Issue.record("Expected voice to remain unavailable.")
+    } catch let failure as CompanionFailure {
+      #expect(failure.kind == .voiceNotConfigured)
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func configuredLaunchBuildsTheRealtimeSessionWithoutStartingIt() {
+    let session = ProductionVoiceSessionFactory.make(
+      environment: [
+        "OPENAI_API_KEY": "must-remain-irrelevant-to-the-app",
+        "READYPLAYERTWO_BROKER_BEARER": "launch-bearer",
+        "READYPLAYERTWO_BROKER_ORIGIN": "http://127.0.0.1:43120",
+        "READYPLAYERTWO_VOICE_CONFIGURED": "1",
+      ]
+    )
+
+    #expect(session is OpenAIRealtimeVoiceSession)
+  }
+
+  @Test
+  func configuredFlagWithoutBrokerDetailsFailsSafely() async {
+    let session = ProductionVoiceSessionFactory.make(
+      environment: [
+        "READYPLAYERTWO_VOICE_CONFIGURED": "1"
+      ]
+    )
+
+    do {
+      try await session.start()
+      Issue.record("Expected incomplete voice configuration to fail.")
+    } catch let failure as CompanionFailure {
+      #expect(failure.kind == .voiceNotConfigured)
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+}
+
 @MainActor
 private final class StubMicrophonePermission: MicrophonePermissionPort {
   private let isGranted: Bool

@@ -160,7 +160,9 @@ node24_binary="$(rpt_node24_binary)"
 node24_prefix="$(rpt_node24_prefix)"
 
 rpt_note "Starting the loopback credential broker..."
+voice_configured=0
 if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+  voice_configured=1
   env \
     "PATH=$node24_prefix/bin:${PATH}" \
     "OPENAI_API_KEY=$OPENAI_API_KEY" \
@@ -207,6 +209,7 @@ rpt_note "Launching one Companion app process..."
 env -u OPENAI_API_KEY \
   "READYPLAYERTWO_BROKER_ORIGIN=$broker_origin" \
   "READYPLAYERTWO_BROKER_BEARER=$broker_bearer_token" \
+  "READYPLAYERTWO_VOICE_CONFIGURED=$voice_configured" \
   "RPT_RUNTIME_CONFIG_PATH=$runtime_config" \
   "$app_executable" \
   >/dev/null 2>&1 &
