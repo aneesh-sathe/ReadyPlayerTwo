@@ -7,10 +7,14 @@ source "${0:A:h:h}/soak-lib.zsh"
 
 integer sampled_process_pid=0
 integer second_process_pid=0
+integer unexpected_process_pid=0
 
 cleanup() {
   local process_id
-  for process_id in "$sampled_process_pid" "$second_process_pid"; do
+  for process_id in \
+    "$sampled_process_pid" \
+    "$second_process_pid" \
+    "$unexpected_process_pid"; do
     if (( process_id > 0 )) && kill -0 "$process_id" 2>/dev/null; then
       kill -TERM "$process_id" 2>/dev/null || true
       wait "$process_id" 2>/dev/null || true
@@ -56,5 +60,16 @@ rpt_soak_verify_lineage \
   "$$" \
   "$sampled_process_pid" \
   "$second_process_pid"
+
+/bin/sleep 30 &
+unexpected_process_pid=$!
+unexpected_children="$(
+  rpt_soak_unexpected_children \
+    "$$" \
+    "$sampled_process_pid" \
+    "$second_process_pid"
+)"
+[[ "$unexpected_children" == "$unexpected_process_pid" ]] ||
+  rpt_die "The soak must report only unexpected direct children."
 
 rpt_note "Soak library tests passed."
