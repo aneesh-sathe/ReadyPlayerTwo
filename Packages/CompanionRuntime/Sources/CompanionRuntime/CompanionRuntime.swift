@@ -12,13 +12,16 @@ public enum PresenceState: String, CaseIterable, Codable, Sendable {
 public struct CompanionPreferences: Equatable, Sendable {
   public var avatar: CompanionAvatar
   public var presence: PresenceState
+  public var parkedPosition: CompanionParkedPosition?
 
   public init(
     avatar: CompanionAvatar = .orion,
-    presence: PresenceState = .roaming
+    presence: PresenceState = .roaming,
+    parkedPosition: CompanionParkedPosition? = nil
   ) {
     self.avatar = avatar
     self.presence = presence
+    self.parkedPosition = parkedPosition
   }
 }
 
@@ -191,11 +194,131 @@ public struct CompanionPlacement: Equatable, Sendable {
   }
 }
 
+public struct CompanionParkedPosition: Codable, Equatable, Sendable {
+  public let displayID: String
+  public let horizontalFraction: Double
+  public let verticalFraction: Double
+
+  public init(
+    displayID: String,
+    horizontalFraction: Double,
+    verticalFraction: Double
+  ) {
+    self.displayID = displayID
+    self.horizontalFraction = horizontalFraction
+    self.verticalFraction = verticalFraction
+  }
+
+  public init?(
+    displayID: String,
+    point: StagePoint,
+    in visibleFrame: StageRect,
+    inset: Double = 64
+  ) {
+    guard
+      point.x.isFinite,
+      point.y.isFinite,
+      visibleFrame.origin.x.isFinite,
+      visibleFrame.origin.y.isFinite,
+      visibleFrame.size.width.isFinite,
+      visibleFrame.size.height.isFinite,
+      visibleFrame.size.width >= 0,
+      visibleFrame.size.height >= 0
+    else {
+      return nil
+    }
+
+    let horizontalInset = min(
+      max(0, inset),
+      max(0, visibleFrame.size.width / 2)
+    )
+    let verticalInset = min(
+      max(0, inset),
+      max(0, visibleFrame.size.height / 2)
+    )
+    let reachableWidth = max(
+      0,
+      visibleFrame.size.width - horizontalInset * 2
+    )
+    let reachableHeight = max(
+      0,
+      visibleFrame.size.height - verticalInset * 2
+    )
+    let clamped = StagePoint(
+      x: min(
+        max(point.x, visibleFrame.origin.x + horizontalInset),
+        visibleFrame.origin.x + visibleFrame.size.width - horizontalInset
+      ),
+      y: min(
+        max(point.y, visibleFrame.origin.y + verticalInset),
+        visibleFrame.origin.y + visibleFrame.size.height - verticalInset
+      )
+    )
+
+    self.init(
+      displayID: displayID,
+      horizontalFraction:
+        reachableWidth > 0
+        ? (clamped.x - visibleFrame.origin.x - horizontalInset)
+          / reachableWidth
+        : 0.5,
+      verticalFraction:
+        reachableHeight > 0
+        ? (clamped.y - visibleFrame.origin.y - verticalInset)
+          / reachableHeight
+        : 0.5
+    )
+
+    guard isValid else {
+      return nil
+    }
+  }
+
+  public var isValid: Bool {
+    !displayID.isEmpty
+      && displayID.count <= 256
+      && horizontalFraction.isFinite
+      && verticalFraction.isFinite
+      && (0...1).contains(horizontalFraction)
+      && (0...1).contains(verticalFraction)
+  }
+
+  public func point(
+    in visibleFrame: StageRect,
+    inset: Double = 64
+  ) -> StagePoint {
+    let horizontalInset = min(
+      max(0, inset),
+      max(0, visibleFrame.size.width / 2)
+    )
+    let verticalInset = min(
+      max(0, inset),
+      max(0, visibleFrame.size.height / 2)
+    )
+    let reachableWidth = max(
+      0,
+      visibleFrame.size.width - horizontalInset * 2
+    )
+    let reachableHeight = max(
+      0,
+      visibleFrame.size.height - verticalInset * 2
+    )
+
+    return StagePoint(
+      x: visibleFrame.origin.x + horizontalInset
+        + reachableWidth * horizontalFraction,
+      y: visibleFrame.origin.y + verticalInset
+        + reachableHeight * verticalFraction
+    )
+  }
+}
+
 public struct CompanionSnapshot: Equatable, Sendable {
   public let avatar: CompanionAvatar
   public let basePresence: PresenceState
   public let isVisible: Bool
   public let placement: CompanionPlacement
+  public let displayVisibleFrame: StageRect
   public let voice: VoiceSessionState
   public let bubble: BubbleState
   public let waveformEnergy: Double
@@ -206,6 +329,7 @@ public struct CompanionSnapshot: Equatable, Sendable {
     basePresence: PresenceState,
     isVisible: Bool,
     placement: CompanionPlacement,
+    displayVisibleFrame: StageRect = CompanionDisplay.main.visibleFrame,
     voice: VoiceSessionState,
     bubble: BubbleState,
     waveformEnergy: Double,
@@ -215,6 +339,7 @@ public struct CompanionSnapshot: Equatable, Sendable {
     self.basePresence = basePresence
     self.isVisible = isVisible
     self.placement = placement
+    self.displayVisibleFrame = displayVisibleFrame
     self.voice = voice
     self.bubble = bubble
     self.waveformEnergy = waveformEnergy
@@ -267,6 +392,7 @@ public final class CompanionRuntime {
 
   private var avatar: CompanionAvatar
   private var basePresence: PresenceState
+  private let initialParkedPosition: CompanionParkedPosition?
   private var placement = CompanionPlacement(
     displayID: CompanionDisplay.main.id,
     position: CompanionDisplay.main.visibleFrame.midpoint
@@ -296,6 +422,7 @@ public final class CompanionRuntime {
     snapshotContinuation = snapshotStream.continuation
     avatar = initialPreferences.avatar
     basePresence = initialPreferences.presence
+    initialParkedPosition = initialPreferences.parkedPosition
     self.stage = stage
     self.voice = voice
     self.platform = platform
@@ -314,9 +441,20 @@ public final class CompanionRuntime {
       observeVoiceEventsIfNeeded()
       let display = await platform.displayContainingPointer()
       currentDisplay = display
+      let launchPosition: StagePoint
+      if basePresence == .parked,
+        let initialParkedPosition,
+        initialParkedPosition.isValid
+      {
+        launchPosition = initialParkedPosition.point(
+          in: display.visibleFrame
+        )
+      } else {
+        launchPosition = display.visibleFrame.midpoint
+      }
       placement = CompanionPlacement(
         displayID: display.id,
-        position: display.visibleFrame.midpoint
+        position: launchPosition
       )
       await publish()
 
@@ -673,6 +811,7 @@ public final class CompanionRuntime {
       basePresence: basePresence,
       isVisible: !stageSuppressed && (basePresence != .hidden || voiceState != .idle),
       placement: placement,
+      displayVisibleFrame: currentDisplay.visibleFrame,
       voice: voiceState,
       bubble: bubbleState,
       waveformEnergy: waveformEnergy,

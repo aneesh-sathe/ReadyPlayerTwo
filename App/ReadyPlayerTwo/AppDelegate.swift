@@ -24,7 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let runtime = CompanionRuntime(
       initialPreferences: CompanionPreferences(
         avatar: preferences.avatar,
-        presence: preferences.presence
+        presence: preferences.presence,
+        parkedPosition: preferences.parkedPosition
       ),
       stage: stage,
       voice: ProductionVoiceSessionFactory.make(

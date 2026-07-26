@@ -412,6 +412,43 @@ struct CompanionRuntimeTracerTests {
   }
 
   @Test
+  func launchRestoresTheNormalizedParkedPositionSafely() async throws {
+    let display = CompanionDisplay(
+      id: "current-display",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: 100, y: 50),
+        size: StageSize(width: 1_000, height: 700)
+      ),
+      scaleFactor: 2
+    )
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(
+        presence: .parked,
+        parkedPosition: CompanionParkedPosition(
+          displayID: "previous-display",
+          horizontalFraction: 0.25,
+          verticalFraction: 0.75
+        )
+      ),
+      stage: RecordingStage(),
+      voice: ScriptedVoiceSession(),
+      platform: MutablePlatform(display: display),
+      clock: ControllableClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+
+    let launchValue = await snapshots.next()
+    let launched = try #require(launchValue)
+    #expect(launched.basePresence == .parked)
+    #expect(launched.placement.displayID == "current-display")
+    #expect(launched.placement.position == StagePoint(x: 382, y: 543))
+    #expect(launched.displayVisibleFrame == display.visibleFrame)
+  }
+
+  @Test
   func summonRelocatesOneSessionToThePointerDisplay() async throws {
     let initialDisplay = CompanionDisplay(
       id: "built-in",

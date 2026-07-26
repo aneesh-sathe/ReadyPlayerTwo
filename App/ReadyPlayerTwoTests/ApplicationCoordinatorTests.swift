@@ -167,6 +167,14 @@ struct ApplicationCoordinatorTests {
     #expect(store.savedPreferences[0].modelIdentifier == "gpt-realtime-2.1")
     #expect(store.savedPreferences[0].volume == 0.65)
     #expect(
+      store.savedPreferences[0].parkedPosition
+        == ReachableParkedPosition(
+          displayID: "main",
+          horizontalFraction: 0.5,
+          verticalFraction: 0.5
+        )
+    )
+    #expect(
       store.savedPreferences[0].shortcut
         == GlobalShortcut(
           keyCode: 1,

@@ -38,6 +38,30 @@ struct LocalInterfacePreferencesTests {
   }
 
   @Test
+  func parkedPositionNormalizesAReachableStagePoint() throws {
+    let frame = StageRect(
+      origin: StagePoint(x: -100, y: 20),
+      size: StageSize(width: 1_000, height: 600)
+    )
+
+    let position = try #require(
+      ReachableParkedPosition(
+        displayID: "main",
+        point: StagePoint(x: 182, y: 320),
+        in: frame,
+        inset: 64
+      )
+    )
+
+    #expect(position.horizontalFraction == 0.25)
+    #expect(position.verticalFraction == 0.5)
+    #expect(
+      position.point(in: frame, inset: 64)
+        == StagePoint(x: 182, y: 320)
+    )
+  }
+
+  @Test
   func allowedInterfacePreferencesPersistAndReload() throws {
     try withStore { store, defaults in
       let preferences = LocalInterfacePreferences(

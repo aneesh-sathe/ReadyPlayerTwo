@@ -1,49 +1,7 @@
 import CompanionRuntime
 import Foundation
 
-struct ReachableParkedPosition: Codable, Equatable, Sendable {
-  let displayID: String
-  let horizontalFraction: Double
-  let verticalFraction: Double
-
-  var isValid: Bool {
-    !displayID.isEmpty
-      && displayID.count <= 256
-      && horizontalFraction.isFinite
-      && verticalFraction.isFinite
-      && (0...1).contains(horizontalFraction)
-      && (0...1).contains(verticalFraction)
-  }
-
-  func point(
-    in visibleFrame: StageRect,
-    inset: Double = 64
-  ) -> StagePoint {
-    let horizontalInset = min(
-      max(0, inset),
-      max(0, visibleFrame.size.width / 2)
-    )
-    let verticalInset = min(
-      max(0, inset),
-      max(0, visibleFrame.size.height / 2)
-    )
-    let reachableWidth = max(
-      0,
-      visibleFrame.size.width - horizontalInset * 2
-    )
-    let reachableHeight = max(
-      0,
-      visibleFrame.size.height - verticalInset * 2
-    )
-
-    return StagePoint(
-      x: visibleFrame.origin.x + horizontalInset
-        + reachableWidth * horizontalFraction,
-      y: visibleFrame.origin.y + verticalInset
-        + reachableHeight * verticalFraction
-    )
-  }
-}
+typealias ReachableParkedPosition = CompanionParkedPosition
 
 struct LocalInterfacePreferences: Codable, Equatable, Sendable {
   let avatar: CompanionAvatar
