@@ -412,6 +412,108 @@ struct CompanionRuntimeTracerTests {
   }
 
   @Test
+  func topologyUpdateKeepsASurvivingDisplayReachable() async throws {
+    let initialDisplay = CompanionDisplay(
+      id: "built-in",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: 0, y: 0),
+        size: StageSize(width: 1_200, height: 800)
+      ),
+      scaleFactor: 2
+    )
+    let updatedDisplay = CompanionDisplay(
+      id: "built-in",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: -1_600, y: 100),
+        size: StageSize(width: 800, height: 600)
+      ),
+      scaleFactor: 1.25
+    )
+    let pointerDisplay = CompanionDisplay(
+      id: "external",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: 0, y: 0),
+        size: StageSize(width: 1_920, height: 1_080)
+      ),
+      scaleFactor: 2
+    )
+    let platform = MutablePlatform(display: initialDisplay)
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: RecordingStage(),
+      voice: ScriptedVoiceSession(),
+      platform: platform,
+      clock: ControllableClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+    _ = await snapshots.next()
+    await runtime.send(.drag(to: StagePoint(x: 1_050, y: 700)))
+    _ = await snapshots.next()
+
+    platform.availableDisplays = [updatedDisplay, pointerDisplay]
+    platform.display = pointerDisplay
+    await runtime.send(.platform(.displayConfigurationChanged))
+
+    let updatedValue = await snapshots.next()
+    let updated = try #require(updatedValue)
+    #expect(updated.placement.displayID == "built-in")
+    #expect(updated.displayVisibleFrame == updatedDisplay.visibleFrame)
+    #expect(updated.displayScaleFactor == 1.25)
+    #expect(updated.placement.position == StagePoint(x: -864, y: 636))
+    #expect(platform.pointerDisplayRequestCount == 1)
+  }
+
+  @Test
+  func topologyUpdateFallsBackWhenTheCurrentDisplayWasRemoved() async throws {
+    let removedDisplay = CompanionDisplay(
+      id: "removed",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: 0, y: 0),
+        size: StageSize(width: 1_440, height: 900)
+      ),
+      scaleFactor: 2
+    )
+    let pointerDisplay = CompanionDisplay(
+      id: "pointer",
+      visibleFrame: StageRect(
+        origin: StagePoint(x: -1_920, y: -200),
+        size: StageSize(width: 1_280, height: 720)
+      ),
+      scaleFactor: 1
+    )
+    let platform = MutablePlatform(display: removedDisplay)
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: RecordingStage(),
+      voice: ScriptedVoiceSession(),
+      platform: platform,
+      clock: ControllableClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+    _ = await snapshots.next()
+    await runtime.send(.drag(to: StagePoint(x: 1_000, y: 700)))
+    _ = await snapshots.next()
+
+    platform.availableDisplays = [pointerDisplay]
+    platform.display = pointerDisplay
+    await runtime.send(.platform(.displayConfigurationChanged))
+
+    let relocatedValue = await snapshots.next()
+    let relocated = try #require(relocatedValue)
+    #expect(relocated.placement.displayID == "pointer")
+    #expect(relocated.displayVisibleFrame == pointerDisplay.visibleFrame)
+    #expect(relocated.displayScaleFactor == 1)
+    #expect(relocated.placement.position == StagePoint(x: -704, y: 456))
+    #expect(platform.pointerDisplayRequestCount == 2)
+  }
+
+  @Test
   func launchRestoresTheNormalizedParkedPositionSafely() async throws {
     let display = CompanionDisplay(
       id: "current-display",
@@ -843,18 +945,30 @@ private struct FixedPlatform: PlatformPort {
   func displayContainingPointer() async -> CompanionDisplay {
     .main
   }
+
+  func display(withID id: String) async -> CompanionDisplay? {
+    id == CompanionDisplay.main.id ? .main : nil
+  }
 }
 
 @MainActor
 private final class MutablePlatform: PlatformPort {
   var display: CompanionDisplay
+  var availableDisplays: [CompanionDisplay]
+  private(set) var pointerDisplayRequestCount = 0
 
   init(display: CompanionDisplay) {
     self.display = display
+    availableDisplays = [display]
   }
 
   func displayContainingPointer() async -> CompanionDisplay {
-    display
+    pointerDisplayRequestCount += 1
+    return display
+  }
+
+  func display(withID id: String) async -> CompanionDisplay? {
+    availableDisplays.first(where: { $0.id == id })
   }
 }
 

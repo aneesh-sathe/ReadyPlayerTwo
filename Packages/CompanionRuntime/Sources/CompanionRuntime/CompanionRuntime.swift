@@ -319,6 +319,7 @@ public struct CompanionSnapshot: Equatable, Sendable {
   public let isVisible: Bool
   public let placement: CompanionPlacement
   public let displayVisibleFrame: StageRect
+  public let displayScaleFactor: Double
   public let voice: VoiceSessionState
   public let bubble: BubbleState
   public let waveformEnergy: Double
@@ -330,6 +331,7 @@ public struct CompanionSnapshot: Equatable, Sendable {
     isVisible: Bool,
     placement: CompanionPlacement,
     displayVisibleFrame: StageRect = CompanionDisplay.main.visibleFrame,
+    displayScaleFactor: Double = CompanionDisplay.main.scaleFactor,
     voice: VoiceSessionState,
     bubble: BubbleState,
     waveformEnergy: Double,
@@ -340,6 +342,7 @@ public struct CompanionSnapshot: Equatable, Sendable {
     self.isVisible = isVisible
     self.placement = placement
     self.displayVisibleFrame = displayVisibleFrame
+    self.displayScaleFactor = displayScaleFactor
     self.voice = voice
     self.bubble = bubble
     self.waveformEnergy = waveformEnergy
@@ -364,6 +367,7 @@ public protocol VoiceSessionPort {
 @MainActor
 public protocol PlatformPort {
   func displayContainingPointer() async -> CompanionDisplay
+  func display(withID id: String) async -> CompanionDisplay?
 }
 
 @MainActor
@@ -573,7 +577,14 @@ public final class CompanionRuntime {
       await publish()
 
     case .displayConfigurationChanged:
-      let display = await platform.displayContainingPointer()
+      let display: CompanionDisplay
+      if let survivingDisplay = await platform.display(
+        withID: currentDisplay.id
+      ) {
+        display = survivingDisplay
+      } else {
+        display = await platform.displayContainingPointer()
+      }
       currentDisplay = display
       placement = CompanionPlacement(
         displayID: display.id,
@@ -812,6 +823,7 @@ public final class CompanionRuntime {
       isVisible: !stageSuppressed && (basePresence != .hidden || voiceState != .idle),
       placement: placement,
       displayVisibleFrame: currentDisplay.visibleFrame,
+      displayScaleFactor: currentDisplay.scaleFactor,
       voice: voiceState,
       bubble: bubbleState,
       waveformEnergy: waveformEnergy,

@@ -98,19 +98,39 @@ struct MacPlatform: PlatformPort {
       return .main
     }
 
+    return companionDisplay(for: screen)
+  }
+
+  func display(withID id: String) async -> CompanionDisplay? {
+    guard
+      let screen = NSScreen.screens.first(where: {
+        screenID(for: $0) == id
+      })
+    else {
+      return nil
+    }
+
+    return companionDisplay(for: screen)
+  }
+
+  private func companionDisplay(for screen: NSScreen) -> CompanionDisplay {
     let frame = screen.visibleFrame
-    let screenNumber =
-      screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
-      as? NSNumber
 
     return CompanionDisplay(
-      id: screenNumber?.stringValue ?? "main",
+      id: screenID(for: screen) ?? "main",
       visibleFrame: StageRect(
         origin: StagePoint(x: frame.origin.x, y: frame.origin.y),
         size: StageSize(width: frame.width, height: frame.height)
       ),
       scaleFactor: screen.backingScaleFactor
     )
+  }
+
+  private func screenID(for screen: NSScreen) -> String? {
+    let screenNumber =
+      screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+      as? NSNumber
+    return screenNumber?.stringValue
   }
 }
 
