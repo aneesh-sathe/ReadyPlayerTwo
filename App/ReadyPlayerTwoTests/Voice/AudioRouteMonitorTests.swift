@@ -6,6 +6,45 @@ import Testing
 @MainActor
 struct AudioRouteMonitorTests {
   @Test
+  func hardwareReadsEverySelectedDataSource() throws {
+    let defaultInput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultInputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let defaultOutput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultOutputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let inputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(17),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeInput
+    )
+    let properties = ScriptedAudioRouteProperties(
+      values: [
+        defaultInput: 17,
+        defaultOutput: 23,
+      ],
+      arrayValues: [
+        inputDataSource: [41, 47]
+      ]
+    )
+    let hardware = CoreAudioDefaultRouteHardware(properties: properties)
+
+    #expect(
+      try hardware.defaultRoute()
+        == AudioRouteSnapshot(
+          inputDevice: AudioDeviceID(17),
+          outputDevice: AudioDeviceID(23),
+          inputDataSources: [41, 47],
+          outputDataSources: nil
+        )
+    )
+  }
+
+  @Test
   func queuedDefaultRouteCallbackCannotReinstallAfterStop() throws {
     let defaultInput = AudioRouteProperty(
       objectID: AudioObjectID(kAudioObjectSystemObject),
@@ -352,6 +391,7 @@ private final class ScriptedAudioRouteProperties:
   }
 
   var values: [AudioRouteProperty: UInt32]
+  var arrayValues: [AudioRouteProperty: [UInt32]]
   var observeFailure: AudioRouteProperty?
   private(set) var observedProperties: [AudioRouteProperty] = []
   private(set) var stoppedObservations: [AudioRoutePropertyObservation] = []
@@ -366,12 +406,16 @@ private final class ScriptedAudioRouteProperties:
 
   private var observations: [AudioRoutePropertyObservation: Observation] = [:]
 
-  init(values: [AudioRouteProperty: UInt32]) {
+  init(
+    values: [AudioRouteProperty: UInt32],
+    arrayValues: [AudioRouteProperty: [UInt32]] = [:]
+  ) {
     self.values = values
+    self.arrayValues = arrayValues
   }
 
   func hasValue(for property: AudioRouteProperty) -> Bool {
-    values[property] != nil
+    values[property] != nil || arrayValues[property] != nil
   }
 
   func value(for property: AudioRouteProperty) throws -> UInt32 {
@@ -379,6 +423,13 @@ private final class ScriptedAudioRouteProperties:
       throw CocoaError(.fileReadUnknown)
     }
     return value
+  }
+
+  func values(for property: AudioRouteProperty) throws -> [UInt32] {
+    guard let values = arrayValues[property] else {
+      throw CocoaError(.fileReadUnknown)
+    }
+    return values
   }
 
   func observe(
