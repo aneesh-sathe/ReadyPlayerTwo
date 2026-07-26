@@ -6,6 +6,50 @@ import Testing
 @MainActor
 struct AudioRouteMonitorTests {
   @Test
+  func listenerFailureCleansUpEveryInstalledObservation() {
+    let defaultInput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultInputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let defaultOutput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultOutputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let inputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(17),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeInput
+    )
+    let outputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(23),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeOutput
+    )
+    let properties = ScriptedAudioRouteProperties(
+      values: [
+        defaultInput: 17,
+        defaultOutput: 23,
+        inputDataSource: 41,
+        outputDataSource: 43,
+      ]
+    )
+    properties.observeFailure = outputDataSource
+    let hardware = CoreAudioDefaultRouteHardware(properties: properties)
+
+    #expect(throws: (any Error).self) {
+      try hardware.observeDefaultRoute {}
+    }
+
+    #expect(properties.activeObservations.isEmpty)
+    #expect(properties.stoppedObservations.count == 3)
+
+    hardware.stopObservingDefaultRoute()
+    #expect(properties.stoppedObservations.count == 3)
+  }
+
+  @Test
   func hardwareMovesSourceObservationToNewDefaultDevice() throws {
     let defaultInput = AudioRouteProperty(
       objectID: AudioObjectID(kAudioObjectSystemObject),
@@ -233,6 +277,7 @@ private final class ScriptedAudioRouteProperties:
   }
 
   var values: [AudioRouteProperty: UInt32]
+  var observeFailure: AudioRouteProperty?
   private(set) var observedProperties: [AudioRouteProperty] = []
   private(set) var stoppedObservations: [AudioRoutePropertyObservation] = []
 
@@ -265,6 +310,9 @@ private final class ScriptedAudioRouteProperties:
     _ property: AudioRouteProperty,
     didChange: @escaping @MainActor @Sendable () -> Void
   ) throws -> AudioRoutePropertyObservation {
+    if property == observeFailure {
+      throw CocoaError(.fileReadUnknown)
+    }
     let observation = AudioRoutePropertyObservation()
     observedProperties.append(property)
     observations[observation] = Observation(
