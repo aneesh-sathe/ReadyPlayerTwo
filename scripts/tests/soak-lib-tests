@@ -1,0 +1,13 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "${0:A:h:h}/lib.zsh"
+source "${0:A:h:h}/soak-lib.zsh"
+
+unset RPT_SOAK_DURATION_SECONDS
+default_duration="$(rpt_soak_duration_seconds)"
+[[ "$default_duration" == "7200" ]] ||
+  rpt_die "The soak duration must default to two hours."
+
+rpt_note "Soak library tests passed."
