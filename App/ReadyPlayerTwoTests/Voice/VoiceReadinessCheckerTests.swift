@@ -5,6 +5,39 @@ import Testing
 
 struct VoiceReadinessCheckerTests {
   @Test
+  func configuredLocalHealthReportsReady() async throws {
+    let endpoint = try #require(
+      URL(string: "http://localhost:43120/health")
+    )
+    let response = try #require(
+      HTTPURLResponse(
+        url: endpoint,
+        statusCode: 200,
+        httpVersion: nil,
+        headerFields: ["Content-Type": "application/json"]
+      )
+    )
+    let httpClient = HealthHTTPDataClient(
+      data: Data(
+        """
+        {"status":"ok","voice":"configured"}
+        """.utf8
+      ),
+      response: response
+    )
+    let checker = LoopbackVoiceReadinessChecker(
+      environment: [
+        "READYPLAYERTWO_BROKER_ORIGIN":
+          "http://localhost:43120",
+        "READYPLAYERTWO_VOICE_CONFIGURED": "1",
+      ],
+      httpClient: httpClient
+    )
+
+    #expect(await checker.check() == .ready)
+  }
+
+  @Test
   func localHealthReportsMissingVoiceWithoutCredentials() async throws {
     let endpoint = try #require(
       URL(string: "http://127.0.0.1:43120/health")
@@ -51,6 +84,40 @@ struct VoiceReadinessCheckerTests {
     #expect(
       request.value(forHTTPHeaderField: "Authorization") == nil
     )
+  }
+
+  @Test
+  func healthProbeRejectsNonLoopbackOrigins() async throws {
+    let endpoint = try #require(
+      URL(string: "https://example.com/health")
+    )
+    let response = try #require(
+      HTTPURLResponse(
+        url: endpoint,
+        statusCode: 200,
+        httpVersion: nil,
+        headerFields: nil
+      )
+    )
+    let httpClient = HealthHTTPDataClient(
+      data: Data(
+        """
+        {"status":"ok","voice":"configured"}
+        """.utf8
+      ),
+      response: response
+    )
+    let checker = LoopbackVoiceReadinessChecker(
+      environment: [
+        "READYPLAYERTWO_BROKER_ORIGIN":
+          "https://example.com",
+        "READYPLAYERTWO_VOICE_CONFIGURED": "1",
+      ],
+      httpClient: httpClient
+    )
+
+    #expect(await checker.check() == .brokerUnavailable)
+    #expect(await httpClient.requests.isEmpty)
   }
 }
 
