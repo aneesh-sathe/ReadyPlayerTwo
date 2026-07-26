@@ -6,6 +6,53 @@ import Testing
 @MainActor
 struct AudioRouteMonitorTests {
   @Test
+  func hardwareObservesSupportedDataSourcesAndCleansUp() throws {
+    let defaultInput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultInputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let defaultOutput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultOutputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let inputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(17),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeInput
+    )
+    let properties = ScriptedAudioRouteProperties(
+      values: [
+        defaultInput: 17,
+        defaultOutput: 23,
+        inputDataSource: 41,
+      ]
+    )
+    let hardware = CoreAudioDefaultRouteHardware(properties: properties)
+    let recorder = AudioRouteChangeRecorder()
+
+    try hardware.observeDefaultRoute {
+      recorder.count += 1
+    }
+
+    #expect(
+      Set(properties.observedProperties)
+        == Set([defaultInput, defaultOutput, inputDataSource])
+    )
+
+    properties.values[inputDataSource] = 47
+    properties.emitChange(for: inputDataSource)
+    #expect(recorder.count == 1)
+
+    let installed = Set(properties.activeObservations)
+    hardware.stopObservingDefaultRoute()
+
+    #expect(properties.activeObservations.isEmpty)
+    #expect(Set(properties.stoppedObservations) == installed)
+  }
+
+  @Test
   func hardwareReadsSupportedSelectedDataSources() throws {
     let properties = ScriptedAudioRouteProperties(
       values: [
@@ -108,7 +155,22 @@ struct AudioRouteMonitorTests {
 private final class ScriptedAudioRouteProperties:
   AudioRoutePropertyAccessPort
 {
+  private struct Observation {
+    let property: AudioRouteProperty
+    let didChange: @MainActor @Sendable () -> Void
+  }
+
   var values: [AudioRouteProperty: UInt32]
+  private(set) var observedProperties: [AudioRouteProperty] = []
+  private(set) var stoppedObservations:
+    [AudioRoutePropertyObservation] = []
+
+  var activeObservations: [AudioRoutePropertyObservation] {
+    Array(observations.keys)
+  }
+
+  private var observations:
+    [AudioRoutePropertyObservation: Observation] = [:]
 
   init(values: [AudioRouteProperty: UInt32]) {
     self.values = values
@@ -129,10 +191,35 @@ private final class ScriptedAudioRouteProperties:
     _ property: AudioRouteProperty,
     didChange: @escaping @MainActor @Sendable () -> Void
   ) throws -> AudioRoutePropertyObservation {
-    AudioRoutePropertyObservation()
+    let observation = AudioRoutePropertyObservation()
+    observedProperties.append(property)
+    observations[observation] = Observation(
+      property: property,
+      didChange: didChange
+    )
+    return observation
   }
 
-  func stopObserving(_ observation: AudioRoutePropertyObservation) {}
+  func stopObserving(_ observation: AudioRoutePropertyObservation) {
+    guard observations.removeValue(forKey: observation) != nil else {
+      return
+    }
+    stoppedObservations.append(observation)
+  }
+
+  func emitChange(for property: AudioRouteProperty) {
+    let callbacks = observations.values
+      .filter { $0.property == property }
+      .map(\.didChange)
+    for callback in callbacks {
+      callback()
+    }
+  }
+}
+
+@MainActor
+private final class AudioRouteChangeRecorder {
+  var count = 0
 }
 
 @MainActor
