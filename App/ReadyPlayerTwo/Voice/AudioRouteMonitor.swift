@@ -172,26 +172,24 @@ final class CoreAudioRouteMonitor: AudioRouteMonitorPort {
 final class CoreAudioDefaultRouteHardware:
   AudioRouteHardwarePort
 {
-  private static let addresses = [
-    AudioObjectPropertyAddress(
-      mSelector: kAudioHardwarePropertyDefaultInputDevice,
-      mScope: kAudioObjectPropertyScopeGlobal,
-      mElement: kAudioObjectPropertyElementMain
+  private static let defaultRouteProperties = [
+    AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultInputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
     ),
-    AudioObjectPropertyAddress(
-      mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-      mScope: kAudioObjectPropertyScopeGlobal,
-      mElement: kAudioObjectPropertyElementMain
+    AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultOutputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
     ),
   ]
 
-  private let callbackQueue = DispatchQueue(
-    label: "com.aneeshsathe.readyplayertwo.audio-route"
-  )
   private let properties: any AudioRoutePropertyAccessPort
 
-  private var listener: AudioObjectPropertyListenerBlock?
-  private var installedAddresses: [AudioObjectPropertyAddress] = []
+  private var defaultRouteObservations: [AudioRoutePropertyObservation] = []
+  private var dataSourceObservations: [AudioRoutePropertyObservation] = []
+  private var observedRoute: AudioRouteSnapshot?
   private var didChange: (@MainActor @Sendable () -> Void)?
 
   init(
@@ -225,52 +223,112 @@ final class CoreAudioDefaultRouteHardware:
   func observeDefaultRoute(
     _ didChange: @escaping @MainActor @Sendable () -> Void
   ) throws {
-    guard listener == nil else {
+    guard defaultRouteObservations.isEmpty else {
       return
     }
 
     self.didChange = didChange
-    let listener: AudioObjectPropertyListenerBlock = {
-      [weak self] _, _ in
-      Task { @MainActor [weak self] in
-        self?.didChange?()
-      }
-    }
-
-    var installed: [AudioObjectPropertyAddress] = []
+    var defaultRouteObservations: [AudioRoutePropertyObservation] = []
+    var dataSourceObservations: [AudioRoutePropertyObservation] = []
     do {
-      for var address in Self.addresses {
-        let status = AudioObjectAddPropertyListenerBlock(
-          AudioObjectID(kAudioObjectSystemObject),
-          &address,
-          callbackQueue,
-          listener
-        )
-        guard status == noErr else {
-          throw Self.failure(
-            "The default audio route could not be observed."
-          )
+      for property in Self.defaultRouteProperties {
+        let observation = try properties.observe(
+          property
+        ) { [weak self] in
+          self?.defaultRouteDidChange()
         }
-        installed.append(address)
+        defaultRouteObservations.append(observation)
       }
+
+      let route = try defaultRoute()
+      dataSourceObservations = try observeDataSources(
+        for: route
+      )
+      observedRoute = route
     } catch {
-      remove(listener: listener, addresses: installed)
+      stopObserving(dataSourceObservations)
+      stopObserving(defaultRouteObservations)
+      observedRoute = nil
       self.didChange = nil
-      throw error
+      throw Self.failure(
+        "The default audio route could not be observed."
+      )
     }
 
-    self.listener = listener
-    installedAddresses = installed
+    self.defaultRouteObservations = defaultRouteObservations
+    self.dataSourceObservations = dataSourceObservations
   }
 
   func stopObservingDefaultRoute() {
-    guard let listener else {
+    guard
+      !defaultRouteObservations.isEmpty
+        || !dataSourceObservations.isEmpty
+        || didChange != nil
+    else {
       return
     }
-    remove(listener: listener, addresses: installedAddresses)
-    self.listener = nil
-    installedAddresses = []
+    stopObserving(dataSourceObservations)
+    stopObserving(defaultRouteObservations)
+    dataSourceObservations = []
+    defaultRouteObservations = []
+    observedRoute = nil
     didChange = nil
+  }
+
+  private func defaultRouteDidChange() {
+    do {
+      let route = try defaultRoute()
+      if route.inputDevice != observedRoute?.inputDevice
+        || route.outputDevice != observedRoute?.outputDevice
+      {
+        let newObservations = try observeDataSources(
+          for: route
+        )
+        stopObserving(dataSourceObservations)
+        dataSourceObservations = newObservations
+      }
+      observedRoute = route
+    } catch {
+      stopObserving(dataSourceObservations)
+      dataSourceObservations = []
+      observedRoute = nil
+    }
+    didChange?()
+  }
+
+  private func observeDataSources(
+    for route: AudioRouteSnapshot
+  ) throws -> [AudioRoutePropertyObservation] {
+    let candidates = [
+      AudioRouteProperty(
+        objectID: AudioObjectID(route.inputDevice),
+        selector: kAudioDevicePropertyDataSource,
+        scope: kAudioDevicePropertyScopeInput
+      ),
+      AudioRouteProperty(
+        objectID: AudioObjectID(route.outputDevice),
+        selector: kAudioDevicePropertyDataSource,
+        scope: kAudioDevicePropertyScopeOutput
+      ),
+    ]
+    var installed: [AudioRoutePropertyObservation] = []
+    do {
+      for property in candidates
+      where property.objectID != kAudioObjectUnknown
+        && properties.hasValue(for: property)
+      {
+        let observation = try properties.observe(
+          property
+        ) { [weak self] in
+          self?.didChange?()
+        }
+        installed.append(observation)
+      }
+    } catch {
+      stopObserving(installed)
+      throw error
+    }
+    return installed
   }
 
   private func device(
@@ -308,17 +366,11 @@ final class CoreAudioDefaultRouteHardware:
     return try? properties.value(for: property)
   }
 
-  private func remove(
-    listener: @escaping AudioObjectPropertyListenerBlock,
-    addresses: [AudioObjectPropertyAddress]
+  private func stopObserving(
+    _ observations: [AudioRoutePropertyObservation]
   ) {
-    for var address in addresses {
-      AudioObjectRemovePropertyListenerBlock(
-        AudioObjectID(kAudioObjectSystemObject),
-        &address,
-        callbackQueue,
-        listener
-      )
+    for observation in observations {
+      properties.stopObserving(observation)
     }
   }
 

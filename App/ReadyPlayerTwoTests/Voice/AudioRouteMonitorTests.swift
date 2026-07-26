@@ -162,15 +162,13 @@ private final class ScriptedAudioRouteProperties:
 
   var values: [AudioRouteProperty: UInt32]
   private(set) var observedProperties: [AudioRouteProperty] = []
-  private(set) var stoppedObservations:
-    [AudioRoutePropertyObservation] = []
+  private(set) var stoppedObservations: [AudioRoutePropertyObservation] = []
 
   var activeObservations: [AudioRoutePropertyObservation] {
     Array(observations.keys)
   }
 
-  private var observations:
-    [AudioRoutePropertyObservation: Observation] = [:]
+  private var observations: [AudioRoutePropertyObservation: Observation] = [:]
 
   init(values: [AudioRouteProperty: UInt32]) {
     self.values = values
