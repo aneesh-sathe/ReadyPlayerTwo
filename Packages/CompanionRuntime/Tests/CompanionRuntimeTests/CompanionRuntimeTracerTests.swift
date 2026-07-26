@@ -308,6 +308,65 @@ struct CompanionRuntimeTracerTests {
     #expect(voice.startCount == 1)
     #expect(voice.stopCount == 1)
   }
+
+  @Test
+  func muteAndWaveformReflectActualSessionState() async throws {
+    let voice = ScriptedVoiceSession()
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: RecordingStage(),
+      voice: voice,
+      platform: FixedPlatform(),
+      clock: ImmediateClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+    _ = await snapshots.next()
+    await runtime.send(.summon(.statusMenu))
+    _ = await snapshots.next()
+    voice.emit(.listening)
+    _ = await snapshots.next()
+    voice.emit(.audioEnergy(0.72))
+
+    let energizedValue = await snapshots.next()
+    let energized = try #require(energizedValue)
+    #expect(energized.voice == .listening)
+    #expect(energized.waveformEnergy == 0.72)
+
+    await runtime.send(.setMuted(true))
+
+    let mutedValue = await snapshots.next()
+    let muted = try #require(mutedValue)
+    #expect(muted.voice == .muted)
+    #expect(muted.bubble == .muted)
+    #expect(muted.waveformEnergy == 0)
+    #expect(voice.muteValues == [true])
+
+    voice.emit(.audioEnergy(2))
+
+    let suppressedValue = await snapshots.next()
+    let suppressed = try #require(suppressedValue)
+    #expect(suppressed.waveformEnergy == 0)
+
+    await runtime.send(.setMuted(false))
+
+    let unmutedValue = await snapshots.next()
+    let unmuted = try #require(unmutedValue)
+    #expect(unmuted.voice == .listening)
+    #expect(unmuted.bubble == .listening)
+    #expect(voice.muteValues == [true, false])
+
+    voice.emit(.speaking)
+    _ = await snapshots.next()
+    voice.emit(.audioEnergy(2))
+
+    let speakingValue = await snapshots.next()
+    let speaking = try #require(speakingValue)
+    #expect(speaking.voice == .speaking)
+    #expect(speaking.waveformEnergy == 1)
+  }
 }
 
 @MainActor
@@ -326,6 +385,7 @@ private final class ScriptedVoiceSession: VoiceSessionPort {
   private let continuation: AsyncStream<VoiceSessionEvent>.Continuation
   private(set) var startCount = 0
   private(set) var stopCount = 0
+  private(set) var muteValues: [Bool] = []
 
   init() {
     let stream = AsyncStream<VoiceSessionEvent>.makeStream()
@@ -341,7 +401,9 @@ private final class ScriptedVoiceSession: VoiceSessionPort {
     stopCount += 1
   }
 
-  func setMuted(_ isMuted: Bool) async {}
+  func setMuted(_ isMuted: Bool) async {
+    muteValues.append(isMuted)
+  }
 
   func emit(_ event: VoiceSessionEvent) {
     continuation.yield(event)

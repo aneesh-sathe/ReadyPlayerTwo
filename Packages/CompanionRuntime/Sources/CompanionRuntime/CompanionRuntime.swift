@@ -50,6 +50,7 @@ public enum CompanionCommand: Equatable, Sendable {
   case drag(to: StagePoint)
   case moveToCurrentDisplay
   case platform(PlatformEvent)
+  case setMuted(Bool)
 }
 
 public enum VoiceSessionEvent: Equatable, Sendable {
@@ -57,6 +58,7 @@ public enum VoiceSessionEvent: Equatable, Sendable {
   case thinking
   case speaking
   case muted
+  case audioEnergy(Double)
   case ended
   case failed(CompanionFailure)
 }
@@ -196,6 +198,7 @@ public struct CompanionSnapshot: Equatable, Sendable {
   public let placement: CompanionPlacement
   public let voice: VoiceSessionState
   public let bubble: BubbleState
+  public let waveformEnergy: Double
   public let recoverableError: CompanionFailure?
 
   public init(
@@ -205,6 +208,7 @@ public struct CompanionSnapshot: Equatable, Sendable {
     placement: CompanionPlacement,
     voice: VoiceSessionState,
     bubble: BubbleState,
+    waveformEnergy: Double,
     recoverableError: CompanionFailure?
   ) {
     self.avatar = avatar
@@ -213,6 +217,7 @@ public struct CompanionSnapshot: Equatable, Sendable {
     self.placement = placement
     self.voice = voice
     self.bubble = bubble
+    self.waveformEnergy = waveformEnergy
     self.recoverableError = recoverableError
   }
 }
@@ -266,6 +271,8 @@ public final class CompanionRuntime {
   private var currentDisplay = CompanionDisplay.main
   private var voiceState = VoiceSessionState.idle
   private var bubbleState = BubbleState.hidden
+  private var waveformEnergy = 0.0
+  private var voiceStateBeforeMute = VoiceSessionState.listening
   private var recoverableError: CompanionFailure?
   private var stageSuppressed = false
   private var voiceEventTask: Task<Void, Never>?
@@ -361,6 +368,34 @@ public final class CompanionRuntime {
 
     case .platform(let event):
       await handlePlatformEvent(event)
+
+    case .setMuted(let isMuted):
+      await setMuted(isMuted)
+    }
+  }
+
+  private func setMuted(_ isMuted: Bool) async {
+    if isMuted {
+      guard voiceState != .idle, voiceState != .muted, voiceState != .ending else {
+        return
+      }
+
+      voiceStateBeforeMute = voiceState
+      await voice.setMuted(true)
+      voiceState = .muted
+      bubbleState = .muted
+      waveformEnergy = 0
+      await publish()
+    } else {
+      guard voiceState == .muted else {
+        return
+      }
+
+      await voice.setMuted(false)
+      voiceState = voiceStateBeforeMute
+      bubbleState = bubble(for: voiceStateBeforeMute)
+      waveformEnergy = 0
+      await publish()
     }
   }
 
@@ -400,6 +435,7 @@ public final class CompanionRuntime {
     observeVoiceEventsIfNeeded()
     voiceState = .connecting
     bubbleState = .connecting
+    waveformEnergy = 0
     recoverableError = nil
     await publish()
 
@@ -415,6 +451,7 @@ public final class CompanionRuntime {
       await voice.stop()
       voiceState = .error(failure)
       bubbleState = .error(failure.message)
+      waveformEnergy = 0
       recoverableError = failure
       await publish()
     }
@@ -441,27 +478,60 @@ public final class CompanionRuntime {
     case .listening:
       voiceState = .listening
       bubbleState = .listening
+      waveformEnergy = 0
     case .thinking:
       voiceState = .thinking
       bubbleState = .thinking
+      waveformEnergy = 0
     case .speaking:
       voiceState = .speaking
       bubbleState = .speaking
+      waveformEnergy = 0
     case .muted:
       voiceState = .muted
       bubbleState = .muted
+      waveformEnergy = 0
+    case .audioEnergy(let energy):
+      if voiceState == .listening || voiceState == .speaking {
+        waveformEnergy = min(max(energy, 0), 1)
+      } else {
+        waveformEnergy = 0
+      }
     case .ended:
       voiceState = .idle
       bubbleState = .hidden
+      waveformEnergy = 0
       recoverableError = nil
     case .failed(let failure):
       voiceState = .error(failure)
       bubbleState = .error(failure.message)
+      waveformEnergy = 0
       recoverableError = failure
       await voice.stop()
     }
 
     await publish()
+  }
+
+  private func bubble(for voiceState: VoiceSessionState) -> BubbleState {
+    switch voiceState {
+    case .idle:
+      .hidden
+    case .connecting:
+      .connecting
+    case .listening:
+      .listening
+    case .thinking:
+      .thinking
+    case .speaking:
+      .speaking
+    case .muted:
+      .muted
+    case .error(let failure):
+      .error(failure.message)
+    case .ending:
+      .ending
+    }
   }
 
   private func publish() async {
@@ -475,6 +545,7 @@ public final class CompanionRuntime {
       placement: placement,
       voice: voiceState,
       bubble: bubbleState,
+      waveformEnergy: waveformEnergy,
       recoverableError: recoverableError
     )
     snapshotContinuation.yield(snapshot)
