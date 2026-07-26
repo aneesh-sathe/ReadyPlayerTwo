@@ -32,6 +32,7 @@ public enum CompanionCommand: Equatable, Sendable {
   case launch
   case summon(SummonSource)
   case endConversation
+  case setPresence(PresenceState)
 }
 
 public enum VoiceSessionEvent: Equatable, Sendable {
@@ -304,6 +305,18 @@ public final class CompanionRuntime {
       bubbleState = .ending
       await publish()
       await voice.stop()
+
+    case .setPresence(let presence):
+      basePresence = presence
+
+      if presence == .hidden, voiceState != .idle, voiceState != .ending {
+        voiceState = .ending
+        bubbleState = .ending
+        await publish()
+        await voice.stop()
+      } else {
+        await publish()
+      }
     }
   }
 

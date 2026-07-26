@@ -63,6 +63,68 @@ struct CompanionRuntimeTracerTests {
     #expect(ended.basePresence == .roaming)
     #expect(ended.isVisible)
   }
+
+  @Test
+  func presenceControlsStaySilentAndHideEndsConversation() async throws {
+    let voice = ScriptedVoiceSession()
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: RecordingStage(),
+      voice: voice,
+      platform: FixedPlatform(),
+      clock: ImmediateClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+    _ = await snapshots.next()
+
+    await runtime.send(.setPresence(.parked))
+
+    let parkedValue = await snapshots.next()
+    let parked = try #require(parkedValue)
+    #expect(parked.basePresence == .parked)
+    #expect(parked.isVisible)
+    #expect(voice.startCount == 0)
+
+    await runtime.send(.setPresence(.hidden))
+
+    let hiddenValue = await snapshots.next()
+    let hidden = try #require(hiddenValue)
+    #expect(hidden.basePresence == .hidden)
+    #expect(!hidden.isVisible)
+    #expect(voice.startCount == 0)
+
+    await runtime.send(.summon(.character))
+    _ = await snapshots.next()
+    voice.emit(.listening)
+    _ = await snapshots.next()
+
+    await runtime.send(.setPresence(.hidden))
+
+    let endingValue = await snapshots.next()
+    let ending = try #require(endingValue)
+    #expect(ending.basePresence == .hidden)
+    #expect(ending.voice == .ending)
+    #expect(ending.isVisible)
+    #expect(voice.stopCount == 1)
+
+    voice.emit(.ended)
+
+    let restoredValue = await snapshots.next()
+    let restored = try #require(restoredValue)
+    #expect(restored.basePresence == .hidden)
+    #expect(!restored.isVisible)
+
+    await runtime.send(.setPresence(.roaming))
+
+    let roamingValue = await snapshots.next()
+    let roaming = try #require(roamingValue)
+    #expect(roaming.basePresence == .roaming)
+    #expect(roaming.isVisible)
+    #expect(voice.startCount == 1)
+  }
 }
 
 @MainActor
