@@ -1,0 +1,211 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "${0:A:h}/lib.zsh"
+
+rpt_require_command xcodebuild "Install and select Xcode."
+rpt_require_command xcodegen "Run brew bundle from the repository root."
+rpt_require_command openssl "Install or restore the macOS OpenSSL command."
+rpt_require_command curl "Install or restore curl."
+rpt_require_command codesign "This command is supplied by macOS."
+rpt_prepare_build_directories
+
+[[ -f "$RPT_ROOT/project.yml" ]] ||
+  rpt_die "project.yml is required before the app can run."
+[[ -f "$RPT_ROOT/Broker/src/broker.ts" ]] ||
+  rpt_die "Broker/src/broker.ts is required before the app can run."
+
+rpt_generate_project_if_configured
+xcode_project="$(rpt_xcode_project)"
+xcode_scheme="${RPT_XCODE_SCHEME:-ReadyPlayerTwo}"
+
+signing_identity="${RPT_SIGNING_IDENTITY:--}"
+if [[ "$signing_identity" == "-" ]]; then
+  rpt_warn "Using ad hoc signing for local V1 evaluation."
+  rpt_warn "Microphone consent may need to be granted again after a rebuild."
+else
+  if ! security find-identity -v -p codesigning 2>/dev/null |
+    grep -Fq "$signing_identity"; then
+    rpt_die "RPT_SIGNING_IDENTITY does not match an available trusted identity."
+  fi
+  rpt_note "Using the configured trusted signing identity."
+fi
+
+xcode_common_args=(
+  -project "$xcode_project"
+  -scheme "$xcode_scheme"
+  -configuration Debug
+  -derivedDataPath "$RPT_DERIVED_DATA"
+  -clonedSourcePackagesDirPath "$RPT_SOURCE_PACKAGES"
+  CODE_SIGN_STYLE=Manual
+  "CODE_SIGN_IDENTITY=$signing_identity"
+  CODE_SIGNING_ALLOWED=YES
+  CODE_SIGNING_REQUIRED=YES
+  DEVELOPMENT_TEAM=
+)
+
+rpt_note "Building the local macOS app with the OpenAI key removed..."
+rpt_without_openai_key \
+  "CLANG_MODULE_CACHE_PATH=$RPT_MODULE_CACHE" \
+  "SWIFTPM_MODULECACHE_OVERRIDE=$RPT_MODULE_CACHE" \
+  xcodebuild "${xcode_common_args[@]}" build
+
+build_settings="$(
+  rpt_without_openai_key \
+    "CLANG_MODULE_CACHE_PATH=$RPT_MODULE_CACHE" \
+    "SWIFTPM_MODULECACHE_OVERRIDE=$RPT_MODULE_CACHE" \
+    xcodebuild "${xcode_common_args[@]}" -showBuildSettings
+)"
+target_build_directory="$(
+  printf '%s\n' "$build_settings" |
+    awk -F ' = ' '/^[[:space:]]*TARGET_BUILD_DIR = / { print $2; exit }'
+)"
+wrapper_name="$(
+  printf '%s\n' "$build_settings" |
+    awk -F ' = ' '/^[[:space:]]*WRAPPER_NAME = / { print $2; exit }'
+)"
+
+[[ -n "$target_build_directory" && -n "$wrapper_name" ]] ||
+  rpt_die "Xcode did not report the built app location."
+app_path="$target_build_directory/$wrapper_name"
+[[ -d "$app_path" ]] || rpt_die "The built app bundle was not found."
+
+app_executable_name="$(
+  /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist"
+)"
+app_executable="$app_path/Contents/MacOS/$app_executable_name"
+[[ -x "$app_executable" ]] || rpt_die "The built app executable was not found."
+
+if ! codesign --verify --deep --strict "$app_path" >/dev/null 2>&1; then
+  rpt_die "The local app signature is invalid."
+fi
+
+umask 077
+runtime_directory="$(mktemp -d "$RPT_RUNTIME_ROOT/run.XXXXXXXX")"
+runtime_config="$runtime_directory/runtime.json"
+broker_bearer_token="$(openssl rand -hex 32)"
+safety_identifier="rpt-local-$(openssl rand -hex 16)"
+
+integer broker_pid=0
+integer app_pid=0
+
+stop_child() {
+  local child_pid="$1"
+  local child_name="$2"
+
+  if (( child_pid <= 0 )); then
+    return
+  fi
+  if ! kill -0 "$child_pid" 2>/dev/null; then
+    wait "$child_pid" 2>/dev/null || true
+    return
+  fi
+
+  rpt_note "Stopping $child_name..."
+  kill -TERM "$child_pid" 2>/dev/null || true
+  local attempt
+  for attempt in {1..50}; do
+    if ! kill -0 "$child_pid" 2>/dev/null; then
+      wait "$child_pid" 2>/dev/null || true
+      return
+    fi
+    sleep 0.1
+  done
+
+  rpt_warn "$child_name did not stop promptly; terminating that exact child."
+  kill -KILL "$child_pid" 2>/dev/null || true
+  wait "$child_pid" 2>/dev/null || true
+}
+
+cleanup() {
+  local exit_status="$?"
+  trap - EXIT INT TERM
+  stop_child "$app_pid" "Companion app"
+  stop_child "$broker_pid" "credential broker"
+  if [[ -f "$runtime_config" ]]; then
+    rm -f "$runtime_config"
+  fi
+  if [[ -d "$runtime_directory" ]]; then
+    rmdir "$runtime_directory" 2>/dev/null || true
+  fi
+  exit "$exit_status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+node24_binary="$(rpt_node24_binary)"
+node24_prefix="$(rpt_node24_prefix)"
+
+rpt_note "Starting the loopback credential broker..."
+if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+  env \
+    "PATH=$node24_prefix/bin:${PATH}" \
+    "OPENAI_API_KEY=$OPENAI_API_KEY" \
+    "RPT_BROKER_BEARER_TOKEN=$broker_bearer_token" \
+    "RPT_RUNTIME_CONFIG_PATH=$runtime_config" \
+    "RPT_SAFETY_IDENTIFIER=$safety_identifier" \
+    "$node24_binary" "$RPT_SCRIPT_DIR/broker-runner.mjs" \
+    >/dev/null 2>&1 &
+else
+  rpt_warn "OPENAI_API_KEY is absent. Voice will report Voice Not Configured."
+  env -u OPENAI_API_KEY \
+    "PATH=$node24_prefix/bin:${PATH}" \
+    "RPT_BROKER_BEARER_TOKEN=$broker_bearer_token" \
+    "RPT_RUNTIME_CONFIG_PATH=$runtime_config" \
+    "RPT_SAFETY_IDENTIFIER=$safety_identifier" \
+    "$node24_binary" "$RPT_SCRIPT_DIR/broker-runner.mjs" \
+    >/dev/null 2>&1 &
+fi
+broker_pid=$!
+
+for attempt in {1..50}; do
+  if [[ -f "$runtime_config" ]]; then
+    break
+  fi
+  if ! kill -0 "$broker_pid" 2>/dev/null; then
+    rpt_die "The credential broker exited during startup."
+  fi
+  sleep 0.1
+done
+[[ -f "$runtime_config" ]] ||
+  rpt_die "The credential broker did not become ready within five seconds."
+
+broker_origin="$(
+  rpt_node24_without_openai_key \
+    "$node24_binary" \
+    -e 'const c=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(c.brokerBaseURL)' \
+    "$runtime_config"
+)"
+if ! curl -fsS -o /dev/null "$broker_origin/health"; then
+  rpt_die "The credential broker health check failed."
+fi
+
+rpt_note "Launching one Companion app process..."
+env -u OPENAI_API_KEY \
+  "READYPLAYERTWO_BROKER_ORIGIN=$broker_origin" \
+  "READYPLAYERTWO_BROKER_BEARER=$broker_bearer_token" \
+  "RPT_RUNTIME_CONFIG_PATH=$runtime_config" \
+  "$app_executable" \
+  >/dev/null 2>&1 &
+app_pid=$!
+
+while kill -0 "$app_pid" 2>/dev/null; do
+  if ! kill -0 "$broker_pid" 2>/dev/null; then
+    rpt_warn "The credential broker stopped unexpectedly."
+    stop_child "$app_pid" "Companion app"
+    exit 1
+  fi
+  sleep 0.2
+done
+
+if wait "$app_pid"; then
+  app_pid=0
+  rpt_note "Companion app exited cleanly."
+else
+  app_status="$?"
+  app_pid=0
+  rpt_die "Companion app exited with status $app_status."
+fi

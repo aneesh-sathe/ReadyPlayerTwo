@@ -1,0 +1,123 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "${0:A:h}/lib.zsh"
+
+rpt_require_command rg "Install ripgrep."
+rpt_require_command swift "Install and select Xcode."
+rpt_prepare_build_directories
+
+product_source_paths=()
+if [[ -d "$RPT_ROOT/App/ReadyPlayerTwo" ]]; then
+  product_source_paths+=("$RPT_ROOT/App/ReadyPlayerTwo")
+fi
+for package_sources in "$RPT_ROOT"/Packages/*/Sources(N); do
+  product_source_paths+=("$package_sources")
+done
+if [[ -f "$RPT_ROOT/project.yml" ]]; then
+  product_source_paths+=("$RPT_ROOT/project.yml")
+fi
+
+rpt_note "Scanning for prohibited V1 capabilities and secrets..."
+rpt_reject_pattern \
+  "Screen capture, screen enumeration, Accessibility, or input-monitoring APIs are prohibited in V1." \
+  'CGWindowListCreateImage|CGWindowListCopyWindowInfo|ScreenCaptureKit|SCStream|SCShareableContent|CGDisplayStream|CGPreflightScreenCaptureAccess|CGRequestScreenCaptureAccess|AXIsProcessTrusted|AXUIElement|CGEventTapCreate|NSScreenCaptureUsageDescription' \
+  "${product_source_paths[@]}"
+rpt_reject_pattern \
+  "Camera or Apple Events permissions are prohibited in V1." \
+  'NSCameraUsageDescription|NSAppleEventsUsageDescription|com\.apple\.security\.device\.camera' \
+  "${product_source_paths[@]}"
+rpt_reject_pattern \
+  "The macOS app or runtime packages must never read OPENAI_API_KEY." \
+  'OPENAI_API_KEY' \
+  "${product_source_paths[@]}"
+rpt_reject_pattern \
+  "A value resembling a provider credential is present in product source." \
+  'sk-[A-Za-z0-9_-]{20,}|ek_[A-Za-z0-9_-]{20,}' \
+  "$RPT_ROOT/App" \
+  "$RPT_ROOT/Packages" \
+  "$RPT_ROOT/Broker/src" \
+  "$RPT_ROOT/project.yml"
+
+local_swift_paths=()
+for swift_path in \
+  "$RPT_ROOT/App/ReadyPlayerTwo" \
+  "$RPT_ROOT/App/ReadyPlayerTwoTests" \
+  "$RPT_ROOT"/Packages/*/Sources(N) \
+  "$RPT_ROOT"/Packages/*/Tests(N); do
+  if [[ -d "$swift_path" ]]; then
+    local_swift_paths+=("$swift_path")
+  fi
+done
+
+if (( ${#local_swift_paths} > 0 )); then
+  rpt_note "Linting Swift formatting..."
+  rpt_swift_format lint \
+    --configuration "$RPT_ROOT/.swift-format" \
+    --recursive \
+    "${local_swift_paths[@]}"
+fi
+
+package_manifests=("$RPT_ROOT"/Packages/*/Package.swift(N))
+for package_manifest in "${package_manifests[@]}"; do
+  package_directory="${package_manifest:h}"
+  package_name="${package_directory:t}"
+  package_scratch="$RPT_TOOL_BUILD_ROOT/swiftpm/$package_name"
+  mkdir -p "$package_scratch"
+
+  rpt_note "Testing Swift package $package_name..."
+  rpt_without_openai_key \
+    "CLANG_MODULE_CACHE_PATH=$RPT_MODULE_CACHE" \
+    "SWIFTPM_MODULECACHE_OVERRIDE=$RPT_MODULE_CACHE" \
+    swift test \
+    --package-path "$package_directory" \
+    --scratch-path "$package_scratch"
+done
+
+if [[ -f "$RPT_ROOT/Broker/package.json" ]]; then
+  rpt_note "Installing and checking the Broker with Node 24..."
+  (
+    cd "$RPT_ROOT/Broker"
+    rpt_node24_without_openai_key npm ci --ignore-scripts --no-audit --no-fund
+    rpt_node24_without_openai_key npm run check
+  )
+fi
+
+if [[ -f "$RPT_ROOT/project.yml" ]]; then
+  rpt_generate_project_if_configured
+fi
+
+projects=("$RPT_ROOT"/*.xcodeproj(N))
+if (( ${#projects} > 0 )); then
+  xcode_project="$(rpt_xcode_project)"
+  xcode_scheme="${RPT_XCODE_SCHEME:-ReadyPlayerTwo}"
+  xcode_common_args=(
+    -project "$xcode_project"
+    -scheme "$xcode_scheme"
+    -configuration Debug
+    -derivedDataPath "$RPT_DERIVED_DATA"
+    -clonedSourcePackagesDirPath "$RPT_SOURCE_PACKAGES"
+    CODE_SIGN_STYLE=Manual
+    CODE_SIGN_IDENTITY=-
+    CODE_SIGNING_ALLOWED=YES
+    CODE_SIGNING_REQUIRED=NO
+    DEVELOPMENT_TEAM=
+  )
+
+  rpt_note "Building the packaged macOS app..."
+  rpt_without_openai_key \
+    "CLANG_MODULE_CACHE_PATH=$RPT_MODULE_CACHE" \
+    "SWIFTPM_MODULECACHE_OVERRIDE=$RPT_MODULE_CACHE" \
+    xcodebuild "${xcode_common_args[@]}" build
+
+  rpt_note "Testing the packaged macOS app..."
+  rpt_without_openai_key \
+    "CLANG_MODULE_CACHE_PATH=$RPT_MODULE_CACHE" \
+    "SWIFTPM_MODULECACHE_OVERRIDE=$RPT_MODULE_CACHE" \
+    xcodebuild "${xcode_common_args[@]}" test
+else
+  rpt_note "No generated Xcode project is present, so packaged-app checks are skipped."
+fi
+
+rpt_note "All available checks passed."

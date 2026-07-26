@@ -1,0 +1,108 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "${0:A:h}/lib.zsh"
+
+integer failures=0
+
+check_command() {
+  local command_name="$1"
+  local install_hint="$2"
+
+  if command -v "$command_name" >/dev/null 2>&1; then
+    rpt_note "ok: $command_name"
+  else
+    rpt_warn "$command_name is missing. $install_hint"
+    failures+=1
+  fi
+}
+
+rpt_note "ReadyPlayerTwo development doctor"
+rpt_note "Repository: $RPT_ROOT"
+rpt_note "Platform: $(uname -s) $(uname -m)"
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  rpt_warn "V1 requires macOS."
+  failures+=1
+fi
+
+if [[ "$(uname -m)" != "arm64" ]]; then
+  rpt_warn "V1 acceptance targets Apple Silicon."
+fi
+
+check_command brew "Install Homebrew, then run brew bundle."
+check_command xcodebuild "Install Xcode and select it with xcode-select."
+check_command xcrun "Install Xcode command line tools."
+check_command xcodegen "Run brew bundle."
+check_command rg "Install ripgrep."
+check_command openssl "Install or restore the macOS OpenSSL command."
+check_command curl "Install or restore curl."
+check_command security "This command is supplied by macOS."
+check_command codesign "This command is supplied by macOS."
+
+if command -v xcodebuild >/dev/null 2>&1; then
+  rpt_note "Xcode: $(xcodebuild -version | tr '\n' ' ')"
+fi
+
+if command -v swift >/dev/null 2>&1; then
+  rpt_note "Swift: $(swift --version | head -n 1)"
+else
+  rpt_warn "Swift is missing. Install and select Xcode."
+  failures+=1
+fi
+
+if node_prefix="$(rpt_node24_prefix 2>/dev/null)"; then
+  node_binary="$node_prefix/bin/node"
+  rpt_note "Node: $("$node_binary" --version) at $node_binary"
+else
+  rpt_warn "Homebrew node@24 is required. Run brew bundle."
+  failures+=1
+fi
+
+if command -v swift-format >/dev/null 2>&1 ||
+  xcrun --find swift-format >/dev/null 2>&1; then
+  rpt_note "ok: swift-format"
+else
+  rpt_warn "swift-format is missing. Run brew bundle."
+  failures+=1
+fi
+
+if [[ -f "$RPT_ROOT/project.yml" ]]; then
+  rpt_note "ok: project.yml"
+else
+  rpt_warn "project.yml is not present yet, so app generation is unavailable."
+fi
+
+if [[ -f "$RPT_ROOT/Broker/package.json" ]]; then
+  rpt_note "ok: Broker package"
+else
+  rpt_warn "Broker/package.json is not present yet, so voice launch is unavailable."
+fi
+
+if [[ -f "$RPT_ROOT/Broker/src/broker.ts" ]]; then
+  rpt_note "ok: Broker runtime"
+else
+  rpt_warn "Broker/src/broker.ts is not present yet."
+fi
+
+if security find-identity -v -p codesigning 2>/dev/null |
+  rg -q '^[[:space:]]*[0-9]+\)'; then
+  rpt_note "ok: trusted code-signing identity is available"
+else
+  rpt_warn "No trusted code-signing identity was found."
+  rpt_warn "scripts/run will use ad hoc signing for local V1 evaluation."
+  rpt_warn "Set RPT_SIGNING_IDENTITY to a trusted identity when stable signing is needed."
+fi
+
+if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+  rpt_note "OpenAI voice configuration: present"
+else
+  rpt_note "OpenAI voice configuration: absent, visual Companion remains available"
+fi
+
+if (( failures > 0 )); then
+  rpt_die "$failures required development prerequisite(s) are missing."
+fi
+
+rpt_note "Doctor completed successfully."

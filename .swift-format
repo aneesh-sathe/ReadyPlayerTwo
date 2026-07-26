@@ -1,0 +1,18 @@
+{
+  "indentation": {
+    "spaces": 2
+  },
+  "lineLength": 100,
+  "maximumBlankLines": 1,
+  "multiElementCollectionTrailingCommas": true,
+  "respectsExistingLineBreaks": true,
+  "rules": {
+    "AllPublicDeclarationsHaveDocumentation": false,
+    "AlwaysUseLowerCamelCase": true,
+    "DoNotUseSemicolons": true,
+    "NeverUseForceTry": true,
+    "OrderedImports": true
+  },
+  "tabWidth": 8,
+  "version": 1
+}
