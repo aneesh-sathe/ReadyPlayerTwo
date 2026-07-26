@@ -20,7 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       voice: preferences.voiceIdentifier ?? defaultVoice.voice,
       instructions: defaultVoice.instructions
     )
-    let stage = CompanionStage(bundle: .main)
+    let stageActions = CompanionStageActions()
+    let stage = CompanionStage(
+      bundle: .main,
+      actions: stageActions
+    )
     let runtime = CompanionRuntime(
       initialPreferences: CompanionPreferences(
         avatar: preferences.avatar,
@@ -34,6 +38,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       platform: MacPlatform(),
       clock: SystemRuntimeClock(),
       randomness: SystemRandomSource()
+    )
+    stageActions.connect(
+      summon: { [weak runtime] in
+        await runtime?.send(.summon(.character))
+      },
+      dragToPark: { [weak runtime] point in
+        await runtime?.send(.drag(to: point))
+      }
     )
     let conversationPresenter = ConversationPanelController(
       actions: ConversationBubbleActions(

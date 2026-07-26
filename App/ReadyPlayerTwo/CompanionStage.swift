@@ -108,6 +108,28 @@ struct SystemCompanionStageMotionPreference:
   }
 }
 
+@MainActor
+final class CompanionStageActions {
+  private var summonHandler: (@MainActor () async -> Void)?
+  private var dragToParkHandler: (@MainActor (StagePoint) async -> Void)?
+
+  func connect(
+    summon: @escaping @MainActor () async -> Void,
+    dragToPark: @escaping @MainActor (StagePoint) async -> Void
+  ) {
+    summonHandler = summon
+    dragToParkHandler = dragToPark
+  }
+
+  func summon() async {
+    await summonHandler?()
+  }
+
+  func dragToPark(_ point: StagePoint) async {
+    await dragToParkHandler?(point)
+  }
+}
+
 enum CompanionAssets {
   static let orionNeutralRelativePath =
     "assets/avatar-orion/expressions/warrior-front-neutral.png"
@@ -157,6 +179,7 @@ final class CompanionStage: StagePort {
   private let terrain: any CompanionStageTerrain
   private let frameDriver: any CompanionStageFrameDriving
   private let motionPreference: any CompanionStageMotionPreference
+  private let actions: CompanionStageActions
   private let motionPlanner = MotionPlanner()
   private let panelPresentationEnabled: Bool
   private var latestSnapshot: CompanionSnapshot?
@@ -181,7 +204,10 @@ final class CompanionStage: StagePort {
     renderer.scene
   }
 
-  convenience init(bundle: Bundle) {
+  convenience init(
+    bundle: Bundle,
+    actions: CompanionStageActions = CompanionStageActions()
+  ) {
     guard let resourceURL = bundle.resourceURL else {
       preconditionFailure("The application bundle has no resource directory.")
     }
@@ -190,6 +216,7 @@ final class CompanionStage: StagePort {
       let isHostedUnitTest = CompanionStageEnvironment.isHostedUnitTest
       try self.init(
         assetRootURL: resourceURL,
+        actions: actions,
         panelPresentationEnabled: !isHostedUnitTest,
         hostsSpriteView: !isHostedUnitTest
       )
@@ -207,6 +234,7 @@ final class CompanionStage: StagePort {
       (any CompanionStageFrameDriving)? = nil,
     motionPreference: any CompanionStageMotionPreference =
       SystemCompanionStageMotionPreference(),
+    actions: CompanionStageActions = CompanionStageActions(),
     panelPresentationEnabled: Bool = true,
     hostsSpriteView: Bool = true
   ) throws {
@@ -236,6 +264,7 @@ final class CompanionStage: StagePort {
     manifests = loadedManifests
     self.terrain = terrain
     self.motionPreference = motionPreference
+    self.actions = actions
     self.panelPresentationEnabled = panelPresentationEnabled
     renderer = CompanionSpriteRenderer(
       image: image,
@@ -247,6 +276,8 @@ final class CompanionStage: StagePort {
     panel = CompanionPanel(
       scene: renderer.scene,
       canvasSize: Self.canvasSize,
+      actions: actions,
+      interactiveRegion: renderer.currentHitRegion,
       presentsScene: false,
       hostsSpriteView: hostsSpriteView
     )
@@ -260,6 +291,7 @@ final class CompanionStage: StagePort {
       stopMotion()
       latestSnapshot = snapshot
       lastRuntimePlacement = snapshot.placement
+      panel.stopPointerTracking()
       panel.orderOut(nil)
       return
     }
@@ -308,6 +340,7 @@ final class CompanionStage: StagePort {
     }
 
     panel.present(scene: renderer.scene)
+    panel.startPointerTracking()
     panel.orderFrontRegardless()
   }
 
@@ -464,6 +497,7 @@ final class CompanionStage: StagePort {
       ? rawIndex % animation.frames.count
       : min(rawIndex, animation.frames.count - 1)
     renderer.showFrame(at: animation.frames[frameIndex])
+    panel.updateInteractiveRegion(renderer.currentHitRegion)
   }
 
   private func showAnimation(
@@ -485,6 +519,7 @@ final class CompanionStage: StagePort {
       animation,
       crossfadeDuration: lastCrossfadeDuration
     )
+    panel.updateInteractiveRegion(renderer.currentHitRegion)
   }
 
   private func stopMotion() {
@@ -528,6 +563,8 @@ final class CompanionSpriteRenderer {
   private let canvasSize: NSSize
   private var sprite: SKSpriteNode
   private var textures: [URL: SKTexture] = [:]
+  private var hitRegions: [URL: AlphaHitRegion] = [:]
+  private(set) var currentHitRegion: AlphaHitRegion?
 
   init(image: NSImage, canvasSize: NSSize) {
     let scene = CompanionSpriteScene(size: canvasSize)
@@ -546,6 +583,7 @@ final class CompanionSpriteRenderer {
     self.canvasSize = canvasSize
     self.sprite = sprite
     self.scene = scene
+    currentHitRegion = AlphaHitRegion(image: image)
   }
 
   func showAnimation(
@@ -558,6 +596,7 @@ final class CompanionSpriteRenderer {
     guard let texture = texture(for: firstFrame) else {
       return
     }
+    currentHitRegion = hitRegions[firstFrame]
 
     if crossfadeDuration > 0 {
       let outgoing = sprite
@@ -581,6 +620,7 @@ final class CompanionSpriteRenderer {
       return
     }
     sprite.texture = texture
+    currentHitRegion = hitRegions[url]
   }
 
   private func texture(for url: URL) -> SKTexture? {
@@ -594,12 +634,176 @@ final class CompanionSpriteRenderer {
     let texture = SKTexture(image: image)
     texture.filteringMode = .nearest
     textures[url] = texture
+    hitRegions[url] = AlphaHitRegion(image: image)
     return texture
+  }
+}
+
+struct AlphaHitRegion {
+  private let width: Int
+  private let height: Int
+  private let alpha: [UInt8]
+
+  init?(image: NSImage) {
+    var proposedRect = NSRect(
+      origin: .zero,
+      size: image.size
+    )
+    guard
+      let cgImage = image.cgImage(
+        forProposedRect: &proposedRect,
+        context: nil,
+        hints: nil
+      )
+    else {
+      return nil
+    }
+
+    let imageWidth = min(cgImage.width, 128)
+    let imageHeight = min(cgImage.height, 128)
+    var rgba = [UInt8](
+      repeating: 0,
+      count: imageWidth * imageHeight * 4
+    )
+    let rendered = rgba.withUnsafeMutableBytes { bytes in
+      guard
+        let context = CGContext(
+          data: bytes.baseAddress,
+          width: imageWidth,
+          height: imageHeight,
+          bitsPerComponent: 8,
+          bytesPerRow: imageWidth * 4,
+          space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo:
+            CGImageAlphaInfo.premultipliedLast.rawValue
+            | CGBitmapInfo.byteOrder32Big.rawValue
+        )
+      else {
+        return false
+      }
+
+      context.draw(
+        cgImage,
+        in: CGRect(
+          x: 0,
+          y: 0,
+          width: imageWidth,
+          height: imageHeight
+        )
+      )
+      return true
+    }
+    guard rendered else {
+      return nil
+    }
+
+    width = imageWidth
+    height = imageHeight
+    alpha = stride(from: 3, to: rgba.count, by: 4).map {
+      rgba[$0]
+    }
+  }
+
+  func contains(
+    _ point: NSPoint,
+    in viewSize: NSSize,
+    padding: CGFloat = 4
+  ) -> Bool {
+    guard
+      viewSize.width > 0,
+      viewSize.height > 0,
+      point.x >= 0,
+      point.y >= 0,
+      point.x < viewSize.width,
+      point.y < viewSize.height
+    else {
+      return false
+    }
+
+    let pixelX = min(
+      width - 1,
+      max(0, Int(point.x / viewSize.width * CGFloat(width)))
+    )
+    let pixelY = min(
+      height - 1,
+      max(0, Int(point.y / viewSize.height * CGFloat(height)))
+    )
+    let horizontalRadius = Int(
+      ceil(padding / viewSize.width * CGFloat(width))
+    )
+    let verticalRadius = Int(
+      ceil(padding / viewSize.height * CGFloat(height))
+    )
+
+    for y in max(0, pixelY - verticalRadius)...min(height - 1, pixelY + verticalRadius) {
+      for x in max(0, pixelX - horizontalRadius)...min(width - 1, pixelX + horizontalRadius)
+      where alpha[y * width + x] > 12 {
+        return true
+      }
+    }
+    return false
+  }
+}
+
+@MainActor
+private final class CompanionInteractionView: NSView {
+  var onClick: (@MainActor () -> Void)?
+  var onDragPreview: (@MainActor (StagePoint) -> Void)?
+  var onDragFinished: (@MainActor (StagePoint) -> Void)?
+
+  private var mouseDownScreenPoint: NSPoint?
+  private var didDrag = false
+
+  override func mouseDown(with event: NSEvent) {
+    mouseDownScreenPoint = NSEvent.mouseLocation
+    didDrag = false
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    guard let mouseDownScreenPoint else {
+      return
+    }
+    let location = NSEvent.mouseLocation
+    let distance = hypot(
+      location.x - mouseDownScreenPoint.x,
+      location.y - mouseDownScreenPoint.y
+    )
+    if distance >= 3 {
+      didDrag = true
+    }
+    if didDrag {
+      onDragPreview?(
+        StagePoint(x: location.x, y: location.y)
+      )
+    }
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    defer {
+      mouseDownScreenPoint = nil
+      didDrag = false
+    }
+
+    let location = NSEvent.mouseLocation
+    if didDrag {
+      onDragFinished?(
+        StagePoint(x: location.x, y: location.y)
+      )
+    } else {
+      onClick?()
+    }
   }
 }
 
 @MainActor
 final class CompanionPanel: NSPanel {
+  private let actions: CompanionStageActions
+  private let canvasSize: NSSize
+  private let interactionView: CompanionInteractionView
+  private weak var spriteView: SKView?
+  private var interactiveRegion: AlphaHitRegion?
+  private var pointerTrackingTimer: Timer?
+
   override var canBecomeKey: Bool {
     false
   }
@@ -617,6 +821,8 @@ final class CompanionPanel: NSPanel {
     self.init(
       scene: renderer.scene,
       canvasSize: canvasSize,
+      actions: CompanionStageActions(),
+      interactiveRegion: renderer.currentHitRegion,
       presentsScene: hostsSpriteView,
       hostsSpriteView: hostsSpriteView
     )
@@ -625,10 +831,16 @@ final class CompanionPanel: NSPanel {
   init(
     scene: SKScene,
     canvasSize: NSSize,
+    actions: CompanionStageActions,
+    interactiveRegion: AlphaHitRegion? = nil,
     presentsScene: Bool,
     hostsSpriteView: Bool
   ) {
     let contentRect = NSRect(origin: .zero, size: canvasSize)
+    self.actions = actions
+    self.canvasSize = canvasSize
+    self.interactiveRegion = interactiveRegion
+    interactionView = CompanionInteractionView(frame: contentRect)
 
     super.init(
       contentRect: contentRect,
@@ -649,6 +861,9 @@ final class CompanionPanel: NSPanel {
     collectionBehavior = [.moveToActiveSpace]
     animationBehavior = .none
 
+    let rootView = NSView(frame: contentRect)
+    rootView.autoresizingMask = [.width, .height]
+
     if hostsSpriteView {
       let spriteView = SKView(frame: contentRect)
       spriteView.allowsTransparency = true
@@ -656,16 +871,27 @@ final class CompanionPanel: NSPanel {
       if presentsScene {
         spriteView.presentScene(scene)
       }
-      contentView = spriteView
-    } else {
-      let headlessView = NSView(frame: contentRect)
-      headlessView.autoresizingMask = [.width, .height]
-      contentView = headlessView
+      rootView.addSubview(spriteView)
+      self.spriteView = spriteView
+    }
+
+    interactionView.autoresizingMask = [.width, .height]
+    rootView.addSubview(interactionView)
+    contentView = rootView
+
+    interactionView.onClick = { [weak self] in
+      self?.performCharacterClick()
+    }
+    interactionView.onDragPreview = { [weak self] point in
+      self?.previewCharacterDrag(to: point)
+    }
+    interactionView.onDragFinished = { [weak self] point in
+      self?.performCharacterDrag(to: point)
     }
   }
 
   func present(scene: SKScene) {
-    guard let spriteView = contentView as? SKView else {
+    guard let spriteView else {
       return
     }
     guard spriteView.scene !== scene else {
@@ -673,5 +899,75 @@ final class CompanionPanel: NSPanel {
     }
 
     spriteView.presentScene(scene)
+  }
+
+  func updateInteractiveRegion(_ region: AlphaHitRegion?) {
+    interactiveRegion = region
+  }
+
+  func updateMousePassthrough(atScreenPoint point: NSPoint) {
+    let localPoint = NSPoint(
+      x: point.x - frame.minX,
+      y: point.y - frame.minY
+    )
+    ignoresMouseEvents = !isInteractive(at: localPoint)
+  }
+
+  func isInteractive(at localPoint: NSPoint) -> Bool {
+    interactiveRegion?.contains(
+      localPoint,
+      in: canvasSize,
+      padding: 4
+    ) ?? false
+  }
+
+  func performCharacterClick() {
+    Task { @MainActor [weak actions] in
+      await actions?.summon()
+    }
+  }
+
+  func performCharacterDrag(to point: StagePoint) {
+    Task { @MainActor [weak actions] in
+      await actions?.dragToPark(point)
+    }
+  }
+
+  func startPointerTracking() {
+    guard pointerTrackingTimer == nil else {
+      return
+    }
+
+    let timer = Timer(
+      timeInterval: 1.0 / 30.0,
+      target: self,
+      selector: #selector(refreshPointerPassthrough),
+      userInfo: nil,
+      repeats: true
+    )
+    RunLoop.main.add(timer, forMode: .common)
+    pointerTrackingTimer = timer
+    refreshPointerPassthrough()
+  }
+
+  func stopPointerTracking() {
+    pointerTrackingTimer?.invalidate()
+    pointerTrackingTimer = nil
+    ignoresMouseEvents = true
+  }
+
+  @objc
+  private func refreshPointerPassthrough() {
+    updateMousePassthrough(atScreenPoint: NSEvent.mouseLocation)
+  }
+
+  private func previewCharacterDrag(to point: StagePoint) {
+    ignoresMouseEvents = false
+    setFrameOrigin(
+      NSPoint(
+        x: point.x - canvasSize.width / 2,
+        y: point.y - canvasSize.height / 2
+      )
+    )
   }
 }

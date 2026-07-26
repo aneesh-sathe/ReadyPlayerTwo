@@ -209,6 +209,71 @@ struct CompanionStageTests {
     )
   }
 
+  @Test
+  func alphaHitTestingRoutesClickAndDragOnlyThroughCharacterPixels() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let actions = CompanionStageActions()
+    var summonCount = 0
+    var parkedPoints: [StagePoint] = []
+    actions.connect(
+      summon: {
+        summonCount += 1
+      },
+      dragToPark: { point in
+        parkedPoints.append(point)
+      }
+    )
+    let stage = try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(
+        surface: CompanionStageSurface(
+          visibleFrame: NSRect(x: 0, y: 0, width: 1_280, height: 800),
+          scaleFactor: 2
+        )
+      ),
+      frameDriver: ManualCompanionStageFrameDriver(),
+      actions: actions,
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+
+    stage.panel.updateMousePassthrough(
+      atScreenPoint: NSPoint(
+        x: stage.panel.frame.minX + 2,
+        y: stage.panel.frame.maxY - 2
+      )
+    )
+    #expect(stage.panel.ignoresMouseEvents)
+
+    stage.panel.updateMousePassthrough(
+      atScreenPoint: NSPoint(
+        x: stage.panel.frame.minX + 50,
+        y: stage.panel.frame.midY
+      )
+    )
+    #expect(!stage.panel.ignoresMouseEvents)
+
+    stage.panel.performCharacterClick()
+    stage.panel.performCharacterDrag(
+      to: StagePoint(x: 900, y: 300)
+    )
+    await drainStageTasks()
+
+    #expect(summonCount == 1)
+    #expect(parkedPoints == [StagePoint(x: 900, y: 300)])
+    #expect(!stage.panel.canBecomeKey)
+    #expect(!stage.panel.canBecomeMain)
+  }
+
   private static func snapshot(
     avatar: CompanionAvatar,
     isVisible: Bool,
@@ -228,6 +293,13 @@ struct CompanionStageTests {
       waveformEnergy: 0,
       recoverableError: nil
     )
+  }
+}
+
+@MainActor
+private func drainStageTasks() async {
+  for _ in 0..<20 {
+    await Task.yield()
   }
 }
 
