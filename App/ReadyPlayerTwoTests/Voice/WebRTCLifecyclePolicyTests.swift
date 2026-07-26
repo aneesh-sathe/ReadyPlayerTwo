@@ -18,4 +18,13 @@ struct WebRTCLifecyclePolicyTests {
         )
     )
   }
+
+  @Test
+  func closingSuppressesNativeConnectionCallbacks() {
+    var gate = WebRTCLifecycleGate()
+    gate.beginConnection()
+    gate.beginClosing()
+
+    #expect(gate.failure(for: .peerDisconnected) == nil)
+  }
 }

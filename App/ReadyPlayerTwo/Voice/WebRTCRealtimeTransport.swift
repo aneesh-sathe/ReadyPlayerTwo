@@ -18,8 +18,7 @@ final class WebRTCRealtimeTransport: RealtimeTransportPort {
   private var dataChannel: RTCDataChannel?
   private var delegateBridge: WebRTCDelegateBridge?
   private var statisticsTask: Task<Void, Never>?
-  private var isClosing = false
-  private var hasReportedConnectionFailure = false
+  private var lifecycleGate = WebRTCLifecycleGate()
 
   init(callClient: any RealtimeCallClient) {
     self.callClient = callClient
@@ -40,8 +39,7 @@ final class WebRTCRealtimeTransport: RealtimeTransportPort {
       throw Self.peerFailure("A voice connection is already active.")
     }
 
-    isClosing = false
-    hasReportedConnectionFailure = false
+    lifecycleGate.beginConnection()
     let bridge = makeDelegateBridge()
     let factory = RTCPeerConnectionFactory()
     let audioConstraints = RTCMediaConstraints(
@@ -146,7 +144,7 @@ final class WebRTCRealtimeTransport: RealtimeTransportPort {
       return
     }
 
-    isClosing = true
+    lifecycleGate.beginClosing()
     statisticsTask?.cancel()
     statisticsTask = nil
     audioTrack?.isEnabled = false
@@ -313,16 +311,12 @@ final class WebRTCRealtimeTransport: RealtimeTransportPort {
     _ signal: WebRTCLifecycleSignal
   ) {
     guard
-      !isClosing,
       peerConnection != nil,
-      !hasReportedConnectionFailure
+      let failure = lifecycleGate.failure(for: signal)
     else {
       return
     }
-    hasReportedConnectionFailure = true
-    continuation.yield(
-      .failed(WebRTCLifecyclePolicy.failure(for: signal))
-    )
+    continuation.yield(.failed(failure))
   }
 
   nonisolated private static func peerFailure(
@@ -361,6 +355,35 @@ enum WebRTCLifecyclePolicy {
         message: "The voice connection was lost."
       )
     }
+  }
+}
+
+struct WebRTCLifecycleGate {
+  private enum State {
+    case idle
+    case connected
+    case failed
+    case closing
+  }
+
+  private var state = State.idle
+
+  mutating func beginConnection() {
+    state = .connected
+  }
+
+  mutating func beginClosing() {
+    state = .closing
+  }
+
+  mutating func failure(
+    for signal: WebRTCLifecycleSignal
+  ) -> CompanionFailure? {
+    guard state == .connected else {
+      return nil
+    }
+    state = .failed
+    return WebRTCLifecyclePolicy.failure(for: signal)
   }
 }
 
