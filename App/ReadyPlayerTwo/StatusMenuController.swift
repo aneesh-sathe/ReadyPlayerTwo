@@ -1,6 +1,13 @@
 import AppKit
 import CompanionRuntime
 
+enum VoiceReadiness: Equatable, Sendable {
+  case checking
+  case ready
+  case notConfigured
+  case brokerUnavailable
+}
+
 struct StatusMenuPresentation: Equatable {
   let conversationTitle: String
   let conversationEnabled: Bool
@@ -10,13 +17,28 @@ struct StatusMenuPresentation: Equatable {
   let selectedPresence: PresenceState
   let selectedAvatar: CompanionAvatar
   let voiceDescription: String
+  let brokerDescription: String
   let microphoneDescription: String
+  let processingDescription: String
 
-  init(snapshot: CompanionSnapshot) {
+  init(
+    snapshot: CompanionSnapshot,
+    voiceReadiness: VoiceReadiness = .checking
+  ) {
     selectedPresence = snapshot.basePresence
     selectedAvatar = snapshot.avatar
     hideOrShowTitle =
       snapshot.basePresence == .hidden ? "Show Companion" : "Hide Companion"
+    processingDescription = "Voice Processing: Remote via OpenAI"
+
+    switch voiceReadiness {
+    case .checking:
+      brokerDescription = "Broker: Checking"
+    case .ready, .notConfigured:
+      brokerDescription = "Broker: Healthy"
+    case .brokerUnavailable:
+      brokerDescription = "Broker: Unavailable"
+    }
 
     switch snapshot.voice {
     case .idle:
@@ -24,7 +46,16 @@ struct StatusMenuPresentation: Equatable {
       conversationEnabled = true
       muteTitle = "Mute Microphone"
       muteVisible = false
-      voiceDescription = "Voice: Idle"
+      switch voiceReadiness {
+      case .checking:
+        voiceDescription = "Voice: Checking"
+      case .ready:
+        voiceDescription = "Voice: Ready"
+      case .notConfigured:
+        voiceDescription = "Voice: Not Configured"
+      case .brokerUnavailable:
+        voiceDescription = "Voice: Unavailable"
+      }
       microphoneDescription = "Microphone: Off"
     case .connecting:
       conversationTitle = "End Conversation"

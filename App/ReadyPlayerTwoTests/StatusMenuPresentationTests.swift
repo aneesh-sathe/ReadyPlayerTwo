@@ -57,7 +57,8 @@ struct StatusMenuPresentationTests {
       snapshot: snapshot(
         avatar: .athena,
         presence: .hidden
-      )
+      ),
+      voiceReadiness: .notConfigured
     )
 
     #expect(presentation.conversationTitle == "Summon")
@@ -66,8 +67,13 @@ struct StatusMenuPresentationTests {
     #expect(presentation.hideOrShowTitle == "Show Companion")
     #expect(presentation.selectedPresence == .hidden)
     #expect(presentation.selectedAvatar == .athena)
-    #expect(presentation.voiceDescription == "Voice: Idle")
+    #expect(presentation.voiceDescription == "Voice: Not Configured")
+    #expect(presentation.brokerDescription == "Broker: Healthy")
     #expect(presentation.microphoneDescription == "Microphone: Off")
+    #expect(
+      presentation.processingDescription
+        == "Voice Processing: Remote via OpenAI"
+    )
   }
 
   @Test
