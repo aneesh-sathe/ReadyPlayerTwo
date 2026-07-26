@@ -125,7 +125,17 @@
 
 - macOS 26.5 on Apple Silicon.
 - Xcode 26.6 with Apple Swift 6.3.3.
-- The installed Node.js 25.9.0 is not the broker target. Provision Node.js 24 LTS before broker implementation.
+- XcodeGen 2.46.0 is installed.
+- Use Node.js 24.18.0 from `/opt/homebrew/opt/node@24/bin`; the globally linked Node.js is not the broker target.
+
+## Verified Commands
+
+- `./scripts/doctor` validates the local toolchain, signing, broker, and optional voice configuration without printing secrets.
+- `./scripts/test` runs privacy scans, formatting, runtime tests, broker tests, XcodeGen, the packaged build, and AppKit tests.
+- `./scripts/run` is the supervised local launch seam for the app and loopback broker.
+- `project.yml` is the Xcode project source of truth. Never commit or hand-edit `ReadyPlayerTwo.xcodeproj`.
+- The current machine has no trusted Apple Development identity. Ad hoc signing builds and runs locally, but microphone consent may need to be granted again after rebuilds.
+- Xcode may report an outdated CoreSimulator framework while macOS builds and tests still pass. V1 does not require a simulator.
 
 ## Agent skills
 
