@@ -14,12 +14,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let preferencesStore = UserDefaultsInterfacePreferencesStore()
     let preferences = preferencesStore.load()
-    let defaultVoice = RealtimeVoiceConfiguration.companionV1
-    let voiceConfiguration = RealtimeVoiceConfiguration(
-      model: preferences.modelIdentifier ?? defaultVoice.model,
-      voice: preferences.voiceIdentifier ?? defaultVoice.voice,
-      instructions: defaultVoice.instructions
-    )
     let stageActions = CompanionStageActions()
     let stage = CompanionStage(
       bundle: .main,
@@ -33,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       ),
       stage: stage,
       voice: ProductionVoiceSessionFactory.make(
-        configuration: voiceConfiguration
+        preferencesStore: preferencesStore
       ),
       platform: MacPlatform(),
       clock: SystemRuntimeClock(),

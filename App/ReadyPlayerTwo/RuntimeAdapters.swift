@@ -59,6 +59,30 @@ enum ProductionVoiceSessionFactory {
       )
     }
   }
+
+  static func make(
+    environment: [String: String] = ProcessInfo.processInfo.environment,
+    preferencesStore: any InterfacePreferencesStoring
+  ) -> any VoiceSessionPort {
+    guard environment[configuredKey] == "1" else {
+      return UnavailableVoiceSession()
+    }
+
+    return PreferenceReloadingVoiceSession(
+      preferencesStore: preferencesStore
+    ) { configuration in
+      let broker = try BrokerClient(
+        environment: environment,
+        configuration: configuration
+      )
+      let transport = try WebRTCRealtimeTransport()
+      return OpenAIRealtimeVoiceSession(
+        broker: broker,
+        transport: transport,
+        configuration: configuration
+      )
+    }
+  }
 }
 
 @MainActor
