@@ -99,6 +99,10 @@
 - Never embed a standard OpenAI API key in the local app.
 - Use a stateless credential broker to mint short-lived Realtime client secrets.
 - Connect the local app directly to OpenAI Realtime so the broker does not proxy conversation audio.
+- Probe voice readiness once at launch with an unauthenticated, body-free GET to
+  the strict loopback broker `/health` endpoint. Reject redirects and never use
+  this probe to contact OpenAI.
+- Keep the Status Menu disclosure explicit that OpenAI processes voice remotely.
 - Do not request Screen Recording permission or link screen-capture behavior in v1.
 - The dedicated Screen Look and proactive Check-in threat models are deferred with their v2 designs.
 - Continuous or silent screen observation is prohibited.
