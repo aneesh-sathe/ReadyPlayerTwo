@@ -281,8 +281,8 @@ struct AudioRouteMonitorTests {
         == AudioRouteSnapshot(
           inputDevice: AudioDeviceID(17),
           outputDevice: AudioDeviceID(23),
-          inputDataSource: 41,
-          outputDataSource: nil
+          inputDataSources: [41],
+          outputDataSources: nil
         )
     )
   }
@@ -294,8 +294,8 @@ struct AudioRouteMonitorTests {
     let initialRoute = AudioRouteSnapshot(
       inputDevice: AudioDeviceID(17),
       outputDevice: AudioDeviceID(23),
-      inputDataSource: 41,
-      outputDataSource: 43
+      inputDataSources: [41],
+      outputDataSources: [43]
     )
     let hardware = ScriptedAudioRouteHardware(route: initialRoute)
     let monitor = CoreAudioRouteMonitor(hardware: hardware)
@@ -310,8 +310,8 @@ struct AudioRouteMonitorTests {
     hardware.route = AudioRouteSnapshot(
       inputDevice: AudioDeviceID(17),
       outputDevice: AudioDeviceID(23),
-      inputDataSource: 47,
-      outputDataSource: 43
+      inputDataSources: [47],
+      outputDataSources: [43]
     )
     hardware.emitChange()
     hardware.emitChange()
@@ -335,8 +335,8 @@ struct AudioRouteMonitorTests {
       route: AudioRouteSnapshot(
         inputDevice: AudioDeviceID(17),
         outputDevice: AudioDeviceID(23),
-        inputDataSource: 41,
-        outputDataSource: 43
+        inputDataSources: [41],
+        outputDataSources: [43]
       )
     )
     let monitor = CoreAudioRouteMonitor(hardware: hardware)
@@ -346,8 +346,8 @@ struct AudioRouteMonitorTests {
     hardware.route = AudioRouteSnapshot(
       inputDevice: AudioDeviceID(17),
       outputDevice: AudioDeviceID(23),
-      inputDataSource: 41,
-      outputDataSource: 53
+      inputDataSources: [41],
+      outputDataSources: [53]
     )
     hardware.emitChange()
 
@@ -426,10 +426,13 @@ private final class ScriptedAudioRouteProperties:
   }
 
   func values(for property: AudioRouteProperty) throws -> [UInt32] {
-    guard let values = arrayValues[property] else {
+    if let values = arrayValues[property] {
+      return values
+    }
+    guard let value = values[property] else {
       throw CocoaError(.fileReadUnknown)
     }
-    return values
+    return [value]
   }
 
   func observe(

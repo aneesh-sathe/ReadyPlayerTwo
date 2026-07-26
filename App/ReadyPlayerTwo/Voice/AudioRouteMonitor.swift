@@ -17,19 +17,19 @@ protocol AudioRouteMonitorPort: AnyObject {
 struct AudioRouteSnapshot: Equatable, Sendable {
   let inputDevice: AudioDeviceID
   let outputDevice: AudioDeviceID
-  let inputDataSource: UInt32?
-  let outputDataSource: UInt32?
+  let inputDataSources: [UInt32]?
+  let outputDataSources: [UInt32]?
 
   init(
     inputDevice: AudioDeviceID,
     outputDevice: AudioDeviceID,
-    inputDataSource: UInt32? = nil,
-    outputDataSource: UInt32? = nil
+    inputDataSources: [UInt32]? = nil,
+    outputDataSources: [UInt32]? = nil
   ) {
     self.inputDevice = inputDevice
     self.outputDevice = outputDevice
-    self.inputDataSource = inputDataSource
-    self.outputDataSource = outputDataSource
+    self.inputDataSources = inputDataSources
+    self.outputDataSources = outputDataSources
   }
 
   var hasUsableDevices: Bool {
@@ -78,6 +78,7 @@ struct AudioRoutePropertyObservation: Hashable, Sendable {
 protocol AudioRoutePropertyAccessPort: AnyObject {
   func hasValue(for property: AudioRouteProperty) -> Bool
   func value(for property: AudioRouteProperty) throws -> UInt32
+  func values(for property: AudioRouteProperty) throws -> [UInt32]
   func observe(
     _ property: AudioRouteProperty,
     didChange: @escaping @MainActor @Sendable () -> Void
@@ -209,11 +210,11 @@ final class CoreAudioDefaultRouteHardware:
     return AudioRouteSnapshot(
       inputDevice: inputDevice,
       outputDevice: outputDevice,
-      inputDataSource: selectedDataSource(
+      inputDataSources: try selectedDataSources(
         for: inputDevice,
         scope: kAudioDevicePropertyScopeInput
       ),
-      outputDataSource: selectedDataSource(
+      outputDataSources: try selectedDataSources(
         for: outputDevice,
         scope: kAudioDevicePropertyScopeOutput
       )
@@ -351,10 +352,10 @@ final class CoreAudioDefaultRouteHardware:
     }
   }
 
-  private func selectedDataSource(
+  private func selectedDataSources(
     for device: AudioDeviceID,
     scope: AudioObjectPropertyScope
-  ) -> UInt32? {
+  ) throws -> [UInt32]? {
     guard device != kAudioObjectUnknown else {
       return nil
     }
@@ -366,7 +367,7 @@ final class CoreAudioDefaultRouteHardware:
     guard properties.hasValue(for: property) else {
       return nil
     }
-    return try? properties.value(for: property)
+    return try properties.values(for: property)
   }
 
   private func stopObserving(
@@ -417,6 +418,56 @@ private final class CoreAudioRoutePropertyAccess:
       throw Self.failure()
     }
     return value
+  }
+
+  func values(for property: AudioRouteProperty) throws -> [UInt32] {
+    var address = property.address
+    var size: UInt32 = 0
+    var status = AudioObjectGetPropertyDataSize(
+      property.objectID,
+      &address,
+      0,
+      nil,
+      &size
+    )
+    guard
+      status == noErr,
+      size % UInt32(MemoryLayout<UInt32>.size) == 0
+    else {
+      throw Self.failure()
+    }
+
+    var values = [UInt32](
+      repeating: 0,
+      count: Int(size) / MemoryLayout<UInt32>.size
+    )
+    guard !values.isEmpty else {
+      return []
+    }
+    status = values.withUnsafeMutableBytes { buffer in
+      guard let baseAddress = buffer.baseAddress else {
+        return kAudioHardwareUnspecifiedError
+      }
+      return AudioObjectGetPropertyData(
+        property.objectID,
+        &address,
+        0,
+        nil,
+        &size,
+        baseAddress
+      )
+    }
+    guard
+      status == noErr,
+      size % UInt32(MemoryLayout<UInt32>.size) == 0
+    else {
+      throw Self.failure()
+    }
+    return Array(
+      values.prefix(
+        Int(size) / MemoryLayout<UInt32>.size
+      )
+    )
   }
 
   func observe(
