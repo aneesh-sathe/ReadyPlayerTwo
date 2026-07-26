@@ -184,3 +184,25 @@ rpt_soak_persistent_unexpected_children() {
     fi
   done
 }
+
+rpt_soak_rss_growth_is_unbounded() {
+  local -a rss_samples
+  rss_samples=("$@")
+
+  if (( ${#rss_samples} < 12 )); then
+    return 1
+  fi
+
+  local rss_kib
+  for rss_kib in "${rss_samples[@]}"; do
+    if [[ "$rss_kib" != <0-> ]]; then
+      rpt_die "An RSS sample is invalid."
+      return
+    fi
+  done
+
+  local first_index=$(( ${#rss_samples} - 11 ))
+  local first_rss_kib="$rss_samples[$first_index]"
+  local last_rss_kib="$rss_samples[-1]"
+  (( last_rss_kib - first_rss_kib >= 32768 ))
+}
