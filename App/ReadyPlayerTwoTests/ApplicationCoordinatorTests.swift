@@ -7,6 +7,32 @@ import Testing
 @MainActor
 struct ApplicationCoordinatorTests {
   @Test
+  func launchReportsVoiceReadinessBeforeAnySummon() async {
+    let runtime = RecordingRuntime()
+    let statusMenu = RecordingStatusMenu()
+    let checker = RecordingVoiceReadinessChecker(
+      readiness: .notConfigured
+    )
+    let coordinator = ApplicationCoordinator(
+      runtime: runtime,
+      statusMenu: statusMenu,
+      application: RecordingApplication(),
+      voiceReadinessChecker: checker
+    )
+
+    await coordinator.start()
+
+    #expect(await checker.checkCount == 1)
+    #expect(
+      statusMenu.renderedVoiceReadiness == [
+        .checking,
+        .notConfigured,
+      ]
+    )
+    #expect(runtime.commands == [.launch])
+  }
+
+  @Test
   func launchInstallsOneMenuAndStartsOneRuntime() async {
     let runtime = RecordingRuntime()
     let statusMenu = RecordingStatusMenu()
@@ -279,6 +305,7 @@ private final class RecordingStatusMenu: StatusMenuPresenting {
   private(set) var actions: StatusMenuActions?
   private(set) var installCount = 0
   private(set) var renderedSnapshots: [CompanionSnapshot] = []
+  private(set) var renderedVoiceReadiness: [VoiceReadiness] = []
 
   func install(actions: StatusMenuActions) {
     self.actions = actions
@@ -287,6 +314,26 @@ private final class RecordingStatusMenu: StatusMenuPresenting {
 
   func render(_ snapshot: CompanionSnapshot) {
     renderedSnapshots.append(snapshot)
+  }
+
+  func renderVoiceReadiness(_ readiness: VoiceReadiness) {
+    renderedVoiceReadiness.append(readiness)
+  }
+}
+
+private actor RecordingVoiceReadinessChecker:
+  VoiceReadinessChecking
+{
+  private let readiness: VoiceReadiness
+  private(set) var checkCount = 0
+
+  init(readiness: VoiceReadiness) {
+    self.readiness = readiness
+  }
+
+  func check() async -> VoiceReadiness {
+    checkCount += 1
+    return readiness
   }
 }
 

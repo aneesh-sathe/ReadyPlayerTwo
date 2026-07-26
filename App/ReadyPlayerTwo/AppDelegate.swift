@@ -95,7 +95,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       application: NSApplication.shared,
       conversationPresenter: conversationPresenter,
       preferencesStore: preferencesStore,
-      initialPreferences: preferences
+      initialPreferences: preferences,
+      voiceReadinessChecker:
+        LoopbackVoiceReadinessChecker()
     )
     let platformEventMonitor = MacPlatformEventMonitor { event in
       await runtime.send(.platform(event))

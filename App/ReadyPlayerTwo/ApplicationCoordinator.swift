@@ -37,6 +37,7 @@ struct StatusMenuActions {
 protocol StatusMenuPresenting: AnyObject {
   func install(actions: StatusMenuActions)
   func render(_ snapshot: CompanionSnapshot)
+  func renderVoiceReadiness(_ readiness: VoiceReadiness)
 }
 
 @MainActor
@@ -46,6 +47,7 @@ final class ApplicationCoordinator {
   private let application: any ApplicationTerminating
   private let conversationPresenter: (any ConversationPresenting)?
   private let preferencesStore: (any InterfacePreferencesStoring)?
+  private let voiceReadinessChecker: (any VoiceReadinessChecking)?
   private var hasStarted = false
   private var latestSnapshot: CompanionSnapshot?
   private var persistedPreferences: LocalInterfacePreferences?
@@ -57,13 +59,16 @@ final class ApplicationCoordinator {
     application: any ApplicationTerminating,
     conversationPresenter: (any ConversationPresenting)? = nil,
     preferencesStore: (any InterfacePreferencesStoring)? = nil,
-    initialPreferences: LocalInterfacePreferences? = nil
+    initialPreferences: LocalInterfacePreferences? = nil,
+    voiceReadinessChecker:
+      (any VoiceReadinessChecking)? = nil
   ) {
     self.runtime = runtime
     self.statusMenu = statusMenu
     self.application = application
     self.conversationPresenter = conversationPresenter
     self.preferencesStore = preferencesStore
+    self.voiceReadinessChecker = voiceReadinessChecker
     persistedPreferences =
       initialPreferences
       ?? preferencesStore?.load()
@@ -132,6 +137,7 @@ final class ApplicationCoordinator {
         }
       )
     )
+    statusMenu.renderVoiceReadiness(.checking)
 
     let snapshots = runtime.snapshots
     snapshotTask = Task { @MainActor [weak self] in
@@ -147,6 +153,10 @@ final class ApplicationCoordinator {
     }
 
     await runtime.send(.launch)
+    let voiceReadiness =
+      await voiceReadinessChecker?.check()
+      ?? .brokerUnavailable
+    statusMenu.renderVoiceReadiness(voiceReadiness)
   }
 
   private func handleConversationAction() async {
