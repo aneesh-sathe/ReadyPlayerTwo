@@ -259,6 +259,8 @@ struct ConversationPanelControllerTests {
       panel.contentView?.frame
         == NSRect(x: 0, y: 0, width: 320, height: 104)
     )
+    #expect(panel.collectionBehavior.contains(.moveToActiveSpace))
+    #expect(panel.collectionBehavior.contains(.fullScreenAuxiliary))
   }
 
   @Test

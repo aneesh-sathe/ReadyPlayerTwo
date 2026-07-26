@@ -215,6 +215,7 @@ private final class ConversationPanel: NSPanel {
     ignoresMouseEvents = false
     level = .floating
     animationBehavior = .none
+    collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
     self.contentView = contentView
   }
 }
