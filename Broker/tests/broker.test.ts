@@ -283,6 +283,75 @@ test("classifies and redacts upstream rate limits", async (context) => {
   );
 });
 
+test("redacts unclassified upstream failures", async (context) => {
+  const broker = await startBroker({
+    apiKey: "sk-standard-secret",
+    bearerToken: "test-launch-bearer",
+    safetyIdentifier: "local-test-user",
+    upstreamFetch: async () =>
+      Response.json(
+        {
+          error: {
+            message:
+              "Provider leaked sk-standard-secret in an error",
+          },
+        },
+        { status: 500 },
+      ),
+  });
+  context.after(() => broker.close());
+
+  const response = await fetch(
+    `${broker.origin}/v1/realtime/client-secret`,
+    {
+      headers: {
+        authorization: "Bearer test-launch-bearer",
+      },
+      method: "POST",
+    },
+  );
+  const responseText = await response.text();
+
+  assert.equal(response.status, 502);
+  assert.equal(responseText, '{"error":"upstream_unavailable"}');
+  assert.doesNotMatch(
+    responseText,
+    /sk-standard-secret|provider|leaked/i,
+  );
+});
+
+test("redacts upstream network errors", async (context) => {
+  const broker = await startBroker({
+    apiKey: "sk-standard-secret",
+    bearerToken: "test-launch-bearer",
+    safetyIdentifier: "local-test-user",
+    upstreamFetch: async () => {
+      throw new Error(
+        "Network failure exposed sk-standard-secret and local-test-user",
+      );
+    },
+  });
+  context.after(() => broker.close());
+
+  const response = await fetch(
+    `${broker.origin}/v1/realtime/client-secret`,
+    {
+      headers: {
+        authorization: "Bearer test-launch-bearer",
+      },
+      method: "POST",
+    },
+  );
+  const responseText = await response.text();
+
+  assert.equal(response.status, 502);
+  assert.equal(responseText, '{"error":"upstream_unavailable"}');
+  assert.doesNotMatch(
+    responseText,
+    /sk-standard-secret|local-test-user|network failure/i,
+  );
+});
+
 test("closes cleanly and idempotently", async () => {
   const broker = await startBroker({
     apiKey: undefined,
