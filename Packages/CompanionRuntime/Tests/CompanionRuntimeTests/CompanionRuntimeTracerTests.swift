@@ -125,6 +125,45 @@ struct CompanionRuntimeTracerTests {
     #expect(roaming.isVisible)
     #expect(voice.startCount == 1)
   }
+
+  @Test
+  func avatarSelectionPreservesTheActiveVoiceSession() async throws {
+    let voice = ScriptedVoiceSession()
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: RecordingStage(),
+      voice: voice,
+      platform: FixedPlatform(),
+      clock: ImmediateClock(),
+      randomness: FixedRandomSource()
+    )
+    var snapshots = runtime.snapshots.makeAsyncIterator()
+
+    await runtime.send(.launch)
+    _ = await snapshots.next()
+    await runtime.send(.summon(.statusMenu))
+    _ = await snapshots.next()
+    voice.emit(.listening)
+    _ = await snapshots.next()
+
+    await runtime.send(.selectAvatar(.athena))
+
+    let athenaValue = await snapshots.next()
+    let athena = try #require(athenaValue)
+    #expect(athena.avatar == .athena)
+    #expect(athena.voice == .listening)
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 0)
+
+    await runtime.send(.selectAvatar(.orion))
+
+    let orionValue = await snapshots.next()
+    let orion = try #require(orionValue)
+    #expect(orion.avatar == .orion)
+    #expect(orion.voice == .listening)
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 0)
+  }
 }
 
 @MainActor

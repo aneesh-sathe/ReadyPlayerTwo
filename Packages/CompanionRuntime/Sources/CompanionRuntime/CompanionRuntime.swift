@@ -33,6 +33,7 @@ public enum CompanionCommand: Equatable, Sendable {
   case summon(SummonSource)
   case endConversation
   case setPresence(PresenceState)
+  case selectAvatar(CompanionAvatar)
 }
 
 public enum VoiceSessionEvent: Equatable, Sendable {
@@ -317,6 +318,10 @@ public final class CompanionRuntime {
       } else {
         await publish()
       }
+
+    case .selectAvatar(let selectedAvatar):
+      avatar = selectedAvatar
+      await publish()
     }
   }
 
