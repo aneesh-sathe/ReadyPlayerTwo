@@ -6,13 +6,16 @@ source "${0:A:h:h}/lib.zsh"
 source "${0:A:h:h}/soak-lib.zsh"
 
 integer sampled_process_pid=0
+integer second_process_pid=0
 
 cleanup() {
-  if (( sampled_process_pid > 0 )) &&
-    kill -0 "$sampled_process_pid" 2>/dev/null; then
-    kill -TERM "$sampled_process_pid" 2>/dev/null || true
-    wait "$sampled_process_pid" 2>/dev/null || true
-  fi
+  local process_id
+  for process_id in "$sampled_process_pid" "$second_process_pid"; do
+    if (( process_id > 0 )) && kill -0 "$process_id" 2>/dev/null; then
+      kill -TERM "$process_id" 2>/dev/null || true
+      wait "$process_id" 2>/dev/null || true
+    fi
+  done
 }
 
 trap cleanup EXIT
@@ -46,5 +49,12 @@ sample_fields=("${(@s: :)process_sample}")
   rpt_die "A process sample must contain a non-negative CPU percentage."
 [[ "$sample_fields[4]" == <1-> ]] ||
   rpt_die "A process sample must contain positive RSS in KiB."
+
+/bin/sleep 30 &
+second_process_pid=$!
+rpt_soak_verify_lineage \
+  "$$" \
+  "$sampled_process_pid" \
+  "$second_process_pid"
 
 rpt_note "Soak library tests passed."
