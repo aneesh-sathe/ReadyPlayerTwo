@@ -1,0 +1,103 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "${0:A:h:h}/lib.zsh"
+source "${0:A:h:h}/smoke-lib.zsh"
+
+test_directory="$(mktemp -d "${TMPDIR:-/tmp}/readyplayertwo-smoke-lib-tests.XXXXXXXX")"
+trap 'rm -rf "$test_directory"' EXIT
+
+lifecycle_report="$test_directory/lifecycle"
+rpt_write_lifecycle_report "$lifecycle_report" 111 222 333
+rpt_smoke_read_lifecycle_report "$lifecycle_report"
+
+[[ "$RPT_SMOKE_LAUNCHER_PID" == "111" ]] ||
+  rpt_die "The smoke reader did not return the launcher PID."
+[[ "$RPT_SMOKE_BROKER_PID" == "222" ]] ||
+  rpt_die "The smoke reader did not return the broker PID."
+[[ "$RPT_SMOKE_APP_PID" == "333" ]] ||
+  rpt_die "The smoke reader did not return the app PID."
+
+invalid_report="$test_directory/invalid"
+(
+  umask 077
+  printf '%s\n' \
+    "schema_version=1" \
+    "launcher_pid=111" \
+    "broker_pid=222" \
+    "app_pid=333" \
+    "unexpected=source /tmp/not-allowed" \
+    >"$invalid_report"
+)
+if rpt_smoke_read_lifecycle_report "$invalid_report" 2>/dev/null; then
+  rpt_die "The smoke reader must reject unknown lifecycle fields."
+fi
+
+microphone_requests="$(
+  printf '%s\n' \
+    '{"processID":401,"eventMessage":"AUTHREQ_CTX: msgID=500.1, service=kTCCServiceMicrophone, preflight=no"}' \
+    '{"processID":401,"eventMessage":"AUTHREQ_ATTRIBUTION: msgID=500.1, attribution={requesting={TCCDProcess: identifier=com.aneeshsathe.readyplayertwo, pid=777, auid=501}}"}' \
+    '{"processID":401,"eventMessage":"AUTHREQ_CTX: msgID=600.1, service=kTCCServiceMicrophone, preflight=no"}' \
+    '{"processID":401,"eventMessage":"AUTHREQ_ATTRIBUTION: msgID=600.1, attribution={requesting={TCCDProcess: identifier=com.example.other, pid=888, auid=501}}"}' \
+    '{"processID":647,"eventMessage":"AUTHREQ_CTX: msgID=500.1, service=kTCCServiceMicrophone, preflight=no"}' \
+    '{"processID":647,"eventMessage":"AUTHREQ_ATTRIBUTION: msgID=500.1, attribution={requesting={TCCDProcess: identifier=com.example.other, pid=999, auid=501}}"}' \
+    '{"processID":401,"eventMessage":"AUTHREQ_CTX: msgID=700.1, service=kTCCServiceListenEvent, preflight=yes"}' \
+    '{"processID":401,"eventMessage":"AUTHREQ_ATTRIBUTION: msgID=700.1, attribution={requesting={TCCDProcess: identifier=com.aneeshsathe.readyplayertwo, pid=777, auid=501}}"}' |
+    rpt_smoke_count_microphone_requests \
+      "com.aneeshsathe.readyplayertwo" \
+      777
+)"
+[[ "$microphone_requests" == "1" ]] ||
+  rpt_die "The TCC audit must correlate only exact app microphone requests."
+
+no_microphone_requests="$(
+  printf '%s\n' \
+    '{"processID":401,"eventMessage":"AUTHREQ_CTX: msgID=700.1, service=kTCCServiceListenEvent, preflight=yes"}' \
+    '{"processID":401,"eventMessage":"AUTHREQ_ATTRIBUTION: msgID=700.1, attribution={requesting={TCCDProcess: identifier=com.aneeshsathe.readyplayertwo, pid=777, auid=501}}"}' |
+    rpt_smoke_count_microphone_requests \
+      "com.aneeshsathe.readyplayertwo" \
+      777
+)"
+[[ "$no_microphone_requests" == "0" ]] ||
+  rpt_die "Non-microphone TCC checks must not fail the smoke audit."
+
+app_bundle="$test_directory/ReadyPlayerTwo.app"
+info_plist="$app_bundle/Contents/Info.plist"
+app_executable="$app_bundle/Contents/MacOS/ReadyPlayerTwo"
+mkdir -p "${app_executable:h}"
+/usr/bin/plutil -create xml1 "$info_plist"
+/usr/libexec/PlistBuddy \
+  -c "Add :CFBundleIdentifier string com.aneeshsathe.readyplayertwo" \
+  -c "Add :CFBundleExecutable string ReadyPlayerTwo" \
+  -c "Add :LSUIElement bool true" \
+  -c "Add :LSMultipleInstancesProhibited bool true" \
+  "$info_plist"
+touch "$app_executable"
+chmod +x "$app_executable"
+
+rpt_smoke_verify_dockless_bundle "$app_bundle"
+
+/usr/libexec/PlistBuddy -c "Set :LSUIElement false" "$info_plist"
+if rpt_smoke_verify_dockless_bundle "$app_bundle" 2>/dev/null; then
+  rpt_die "A Dock-visible bundle must fail the smoke audit."
+fi
+
+loopback_port="$(
+  printf '%s\n' "p222" "n127.0.0.1:43123" |
+    rpt_smoke_parse_loopback_listener
+)"
+[[ "$loopback_port" == "43123" ]] ||
+  rpt_die "The broker audit did not return the loopback listener port."
+
+if printf '%s\n' "p222" "n*:43123" |
+  rpt_smoke_parse_loopback_listener >/dev/null 2>&1; then
+  rpt_die "A wildcard broker listener must fail the smoke audit."
+fi
+
+if printf '%s\n' "p222" "n127.0.0.1:43123" "n127.0.0.1:43124" |
+  rpt_smoke_parse_loopback_listener >/dev/null 2>&1; then
+  rpt_die "Multiple broker listeners must fail the smoke audit."
+fi
+
+rpt_note "Smoke library tests passed."
