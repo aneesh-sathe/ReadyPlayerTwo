@@ -10,4 +10,14 @@ default_duration="$(rpt_soak_duration_seconds)"
 [[ "$default_duration" == "7200" ]] ||
   rpt_die "The soak duration must default to two hours."
 
+RPT_SOAK_DURATION_SECONDS=15
+short_duration="$(rpt_soak_duration_seconds)"
+[[ "$short_duration" == "15" ]] ||
+  rpt_die "A short validated soak duration must be available for evaluation."
+
+RPT_SOAK_DURATION_SECONDS=0
+if rpt_soak_duration_seconds >/dev/null 2>&1; then
+  rpt_die "A non-positive soak duration must be rejected."
+fi
+
 rpt_note "Soak library tests passed."
