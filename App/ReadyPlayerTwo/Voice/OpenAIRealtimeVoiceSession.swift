@@ -102,7 +102,11 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
       lifecycle = .idle
       throw CompanionFailure(
         kind: .microphoneDenied,
-        message: "Microphone access is required to start a conversation."
+        message:
+          """
+          Enable ReadyPlayerTwo in System Settings > Privacy & Security > \
+          Microphone, then Retry.
+          """
       )
     }
 

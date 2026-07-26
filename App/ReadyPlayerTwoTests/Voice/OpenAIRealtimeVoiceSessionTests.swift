@@ -125,6 +125,13 @@ struct OpenAIRealtimeVoiceSessionTests {
       Issue.record("Expected microphone denial")
     } catch let failure as CompanionFailure {
       #expect(failure.kind == .microphoneDenied)
+      #expect(
+        failure.message
+          == """
+          Enable ReadyPlayerTwo in System Settings > Privacy & Security > \
+          Microphone, then Retry.
+          """
+      )
     } catch {
       Issue.record("Unexpected error: \(error)")
     }
