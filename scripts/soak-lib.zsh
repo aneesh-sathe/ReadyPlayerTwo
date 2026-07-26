@@ -270,3 +270,27 @@ rpt_soak_cpu_window_exceeds_limit() {
   typeset -F 3 cpu_average=$(( cpu_total / 12 ))
   (( cpu_average >= cpu_limit_percent ))
 }
+
+rpt_soak_resident_memory_exceeds_limit() {
+  local rss_limit_kib="$1"
+  shift
+  local -a rss_samples
+  rss_samples=("$@")
+
+  if [[ "$rss_limit_kib" != <1-> || ${#rss_samples} == 0 ]]; then
+    rpt_die "The soak resident memory policy is invalid."
+    return
+  fi
+
+  integer rss_total_kib=0
+  local rss_kib
+  for rss_kib in "${rss_samples[@]}"; do
+    if [[ "$rss_kib" != <0-> ]]; then
+      rpt_die "An RSS sample is invalid."
+      return
+    fi
+    rss_total_kib+=rss_kib
+  done
+
+  (( rss_total_kib >= rss_limit_kib ))
+}
