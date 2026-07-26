@@ -15,6 +15,7 @@ struct OpenAIRealtimeVoiceSessionTests {
       microphonePermission: permission,
       broker: broker,
       transport: transport,
+      audioRouteMonitor: ScriptedAudioRouteMonitor(),
       configuration: RealtimeVoiceConfiguration(
         model: "configured-model",
         voice: "configured-voice",
@@ -69,7 +70,8 @@ struct OpenAIRealtimeVoiceSessionTests {
     let session = OpenAIRealtimeVoiceSession(
       microphonePermission: StubMicrophonePermission(isGranted: true),
       broker: StubBrokerClient(),
-      transport: transport
+      transport: transport,
+      audioRouteMonitor: ScriptedAudioRouteMonitor()
     )
     var events = session.events.makeAsyncIterator()
     try await session.start()
@@ -114,7 +116,8 @@ struct OpenAIRealtimeVoiceSessionTests {
     let session = OpenAIRealtimeVoiceSession(
       microphonePermission: permission,
       broker: broker,
-      transport: transport
+      transport: transport,
+      audioRouteMonitor: ScriptedAudioRouteMonitor()
     )
 
     do {
@@ -141,7 +144,8 @@ struct OpenAIRealtimeVoiceSessionTests {
           code: "upstream_authentication_failed"
         )
       ),
-      transport: transport
+      transport: transport,
+      audioRouteMonitor: ScriptedAudioRouteMonitor()
     )
 
     do {
@@ -167,7 +171,8 @@ struct OpenAIRealtimeVoiceSessionTests {
     let session = OpenAIRealtimeVoiceSession(
       microphonePermission: StubMicrophonePermission(isGranted: true),
       broker: StubBrokerClient(),
-      transport: transport
+      transport: transport,
+      audioRouteMonitor: ScriptedAudioRouteMonitor()
     )
     var events = session.events.makeAsyncIterator()
     try await session.start()
@@ -180,6 +185,33 @@ struct OpenAIRealtimeVoiceSessionTests {
     #expect(await events.next() == .failed(failure))
 
     await session.stop()
+    #expect(transport.closeCount == 1)
+  }
+
+  @Test
+  func audioRouteChangeEndsTheActiveSessionWithRetryableFailure()
+    async throws
+  {
+    let routeMonitor = ScriptedAudioRouteMonitor()
+    let transport = ScriptedRealtimeTransport()
+    let session = OpenAIRealtimeVoiceSession(
+      microphonePermission: StubMicrophonePermission(isGranted: true),
+      broker: StubBrokerClient(),
+      transport: transport,
+      audioRouteMonitor: routeMonitor
+    )
+    var events = session.events.makeAsyncIterator()
+    try await session.start()
+
+    routeMonitor.emit(.changed)
+
+    let failure = CompanionFailure(
+      kind: .audioRoute,
+      message: "The audio device changed. Retry to reconnect voice."
+    )
+    #expect(await events.next() == .failed(failure))
+    #expect(routeMonitor.startCount == 1)
+    #expect(routeMonitor.stopCount == 1)
     #expect(transport.closeCount == 1)
   }
 }
@@ -270,6 +302,33 @@ private actor FailingBrokerClient: BrokerClientPort {
 
   func fetchClientSecret() async throws -> EphemeralClientSecret {
     throw error
+  }
+}
+
+@MainActor
+private final class ScriptedAudioRouteMonitor: AudioRouteMonitorPort {
+  let events: AsyncStream<AudioRouteMonitorEvent>
+
+  private let continuation: AsyncStream<AudioRouteMonitorEvent>.Continuation
+  private(set) var startCount = 0
+  private(set) var stopCount = 0
+
+  init() {
+    let pair = AsyncStream<AudioRouteMonitorEvent>.makeStream()
+    events = pair.stream
+    continuation = pair.continuation
+  }
+
+  func start() throws {
+    startCount += 1
+  }
+
+  func stop() {
+    stopCount += 1
+  }
+
+  func emit(_ event: AudioRouteMonitorEvent) {
+    continuation.yield(event)
   }
 }
 

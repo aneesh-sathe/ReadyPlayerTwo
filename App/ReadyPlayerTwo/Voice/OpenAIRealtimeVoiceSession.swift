@@ -61,6 +61,7 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
   private let microphonePermission: any MicrophonePermissionPort
   private let broker: any BrokerClientPort
   private let transport: any RealtimeTransportPort
+  private let audioRouteMonitor: any AudioRouteMonitorPort
   private let configuration: RealtimeVoiceConfiguration
   private let continuation: AsyncStream<VoiceSessionEvent>.Continuation
 
@@ -68,17 +69,21 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
   private var phase = ConversationPhase.listening
   private var phaseBeforeMute = ConversationPhase.listening
   private var transportEventTask: Task<Void, Never>?
+  private var audioRouteEventTask: Task<Void, Never>?
 
   init(
     microphonePermission: any MicrophonePermissionPort =
       SystemMicrophonePermission(),
     broker: any BrokerClientPort,
     transport: any RealtimeTransportPort,
+    audioRouteMonitor: any AudioRouteMonitorPort =
+      CoreAudioRouteMonitor(),
     configuration: RealtimeVoiceConfiguration = .companionV1
   ) {
     self.microphonePermission = microphonePermission
     self.broker = broker
     self.transport = transport
+    self.audioRouteMonitor = audioRouteMonitor
     self.configuration = configuration
 
     let pair = AsyncStream<VoiceSessionEvent>.makeStream()
@@ -124,10 +129,15 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
         )
       }
       try transport.send(Self.sessionUpdate(configuration: configuration))
+      try audioRouteMonitor.start()
       lifecycle = .active
+      observeAudioRoute()
     } catch {
       transportEventTask?.cancel()
       transportEventTask = nil
+      audioRouteEventTask?.cancel()
+      audioRouteEventTask = nil
+      audioRouteMonitor.stop()
       transport.close()
       lifecycle = .idle
       throw Self.failure(for: error, boundary: .transport)
@@ -141,6 +151,9 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
 
     transportEventTask?.cancel()
     transportEventTask = nil
+    audioRouteEventTask?.cancel()
+    audioRouteEventTask = nil
+    audioRouteMonitor.stop()
     transport.close()
     lifecycle = .idle
     phase = .listening
@@ -178,6 +191,19 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
     }
   }
 
+  private func observeAudioRoute() {
+    audioRouteEventTask?.cancel()
+    let routeEvents = audioRouteMonitor.events
+    audioRouteEventTask = Task { @MainActor [weak self] in
+      for await event in routeEvents {
+        guard let self, !Task.isCancelled else {
+          return
+        }
+        receive(event)
+      }
+    }
+  }
+
   private func receive(_ event: RealtimeTransportEvent) {
     guard lifecycle == .starting || lifecycle == .active else {
       return
@@ -198,6 +224,22 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
       continuation.yield(.audioEnergy(Self.normalized(energy)))
     case .failed(let failure):
       fail(failure)
+    }
+  }
+
+  private func receive(_ event: AudioRouteMonitorEvent) {
+    guard lifecycle == .active else {
+      return
+    }
+
+    switch event {
+    case .changed:
+      fail(
+        CompanionFailure(
+          kind: .audioRoute,
+          message: "The audio device changed. Retry to reconnect voice."
+        )
+      )
     }
   }
 
@@ -280,6 +322,9 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
     lifecycle = .failed
     transportEventTask?.cancel()
     transportEventTask = nil
+    audioRouteEventTask?.cancel()
+    audioRouteEventTask = nil
+    audioRouteMonitor.stop()
     transport.close()
     continuation.yield(.failed(failure))
   }
