@@ -153,7 +153,7 @@ struct LocalInterfacePreferencesTests {
   func sensitiveOrConversationalIdentifiersAreRejected() {
     withStore { store, defaults in
       let sensitivePreferences = LocalInterfacePreferences(
-        voiceIdentifier: "sk-sensitive-credential-value",
+        voiceIdentifier: "sk-test",
         modelIdentifier: "conversation text must not be stored"
       )
 
