@@ -2,7 +2,15 @@ import AppKit
 import Carbon
 
 @MainActor
-final class ShortcutSettingsPopoverController: NSObject {
+protocol ShortcutSettingsPresenting: AnyObject {
+  func show(relativeTo positioningView: NSView)
+}
+
+@MainActor
+final class ShortcutSettingsPopoverController:
+  NSObject,
+  ShortcutSettingsPresenting
+{
   private static let contentSize = NSSize(width: 360, height: 176)
 
   let popover: NSPopover
@@ -39,6 +47,16 @@ final class ShortcutSettingsPopoverController: NSObject {
     configureStatusLabel()
     installContent()
     renderIdle()
+  }
+
+  func show(relativeTo positioningView: NSView) {
+    preferences = preferencesStore.load()
+    renderIdle()
+    popover.show(
+      relativeTo: positioningView.bounds,
+      of: positioningView,
+      preferredEdge: .minY
+    )
   }
 
   @objc
@@ -182,6 +200,7 @@ final class ShortcutSettingsPopoverController: NSObject {
   }
 
   private func accept(_ candidate: GlobalShortcut) {
+    preferences = preferencesStore.load()
     guard candidate != preferences.shortcut else {
       renderIdle(status: "Shortcut unchanged.")
       return

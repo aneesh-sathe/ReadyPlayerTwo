@@ -1,5 +1,6 @@
 import CompanionRuntime
 import Testing
+
 @testable import ReadyPlayerTwo
 
 @Suite(.serialized)
@@ -183,6 +184,45 @@ struct ApplicationCoordinatorTests {
     )
   }
 
+  @Test
+  func runtimePersistencePreservesSettingsChangedElsewhere() async throws {
+    let initial = LocalInterfacePreferences.defaults
+    let replacementShortcut = GlobalShortcut(
+      keyCode: 40,
+      modifiers: [.command, .option]
+    )
+    let store = RecordingPreferencesStore(preferences: initial)
+    let runtime = RecordingRuntime()
+    let coordinator = ApplicationCoordinator(
+      runtime: runtime,
+      statusMenu: RecordingStatusMenu(),
+      application: RecordingApplication(),
+      preferencesStore: store,
+      initialPreferences: initial
+    )
+
+    await coordinator.start()
+    store.replaceWithoutRecording(
+      LocalInterfacePreferences(
+        avatar: .orion,
+        presence: .roaming,
+        voiceIdentifier: "marin",
+        modelIdentifier: "gpt-realtime-2.1",
+        volume: 0.35,
+        shortcut: replacementShortcut,
+        parkedPosition: nil
+      )
+    )
+
+    runtime.emit(snapshot(avatar: .athena, presence: .roaming))
+    await drainTasks()
+
+    let saved = try #require(store.savedPreferences.last)
+    #expect(saved.avatar == .athena)
+    #expect(saved.shortcut == replacementShortcut)
+    #expect(saved.volume == 0.35)
+  }
+
   private func snapshot(
     avatar: CompanionAvatar = .orion,
     presence: PresenceState = .roaming,
@@ -288,5 +328,11 @@ private final class RecordingPreferencesStore: InterfacePreferencesStoring {
 
   func clear() {
     preferences = .defaults
+  }
+
+  func replaceWithoutRecording(
+    _ preferences: LocalInterfacePreferences
+  ) {
+    self.preferences = preferences
   }
 }

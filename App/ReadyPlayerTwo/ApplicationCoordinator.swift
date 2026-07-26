@@ -185,6 +185,12 @@ final class ApplicationCoordinator {
   private func persistInterfacePreferences(
     from snapshot: CompanionSnapshot
   ) {
+    guard let preferencesStore else {
+      return
+    }
+    let current = preferencesStore.load()
+    persistedPreferences = current
+
     let parkedPosition: ReachableParkedPosition?
     if snapshot.basePresence == .parked {
       parkedPosition =
@@ -193,14 +199,12 @@ final class ApplicationCoordinator {
           point: snapshot.placement.position,
           in: snapshot.displayVisibleFrame
         )
-        ?? persistedPreferences?.parkedPosition
+        ?? current.parkedPosition
     } else {
-      parkedPosition = persistedPreferences?.parkedPosition
+      parkedPosition = current.parkedPosition
     }
 
     guard
-      let preferencesStore,
-      let current = persistedPreferences,
       current.avatar != snapshot.avatar
         || current.presence != snapshot.basePresence
         || current.parkedPosition != parkedPosition

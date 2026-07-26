@@ -1,9 +1,56 @@
+import AppKit
 import CompanionRuntime
 import Testing
+
 @testable import ReadyPlayerTwo
 
 @Suite(.serialized)
 struct StatusMenuPresentationTests {
+  @Test
+  @MainActor
+  func statusMenuExposesAnchoredShortcutSettings() throws {
+    let presenter = RecordingShortcutSettingsPresenter()
+    let controller = StatusMenuController(
+      shortcutSettingsPresenter: presenter
+    )
+    controller.install(
+      actions: StatusMenuActions(
+        summonOrEnd: {},
+        roam: {},
+        park: {},
+        hideOrShow: {},
+        selectAvatar: { _ in },
+        moveToCurrentDisplay: {},
+        muteOrUnmute: {},
+        quit: {}
+      )
+    )
+    defer {
+      controller.uninstall()
+    }
+
+    let menu = try #require(controller.installedMenu)
+    let item = try #require(
+      menu.items.first(where: {
+        $0.title == "Keyboard Shortcut…"
+      })
+    )
+
+    let action = try #require(item.action)
+    #expect(
+      NSApp.sendAction(
+        action,
+        to: item.target,
+        from: item
+      )
+    )
+
+    #expect(presenter.positioningViews.count == 1)
+    #expect(
+      presenter.positioningViews.first is NSStatusBarButton
+    )
+  }
+
   @Test
   func idlePresentationReflectsPresenceAndAvatar() {
     let presentation = StatusMenuPresentation(
@@ -85,5 +132,16 @@ struct StatusMenuPresentationTests {
       waveformEnergy: 0,
       recoverableError: recoverableError
     )
+  }
+}
+
+@MainActor
+private final class RecordingShortcutSettingsPresenter:
+  ShortcutSettingsPresenting
+{
+  private(set) var positioningViews: [NSView] = []
+
+  func show(relativeTo positioningView: NSView) {
+    positioningViews.append(positioningView)
   }
 }

@@ -81,6 +81,7 @@ struct StatusMenuPresentation: Equatable {
 
 @MainActor
 final class StatusMenuController: NSObject, StatusMenuPresenting {
+  private let shortcutSettingsPresenter: (any ShortcutSettingsPresenting)?
   private var actions: StatusMenuActions?
   private var statusItem: NSStatusItem?
   private var conversationItem: NSMenuItem?
@@ -92,6 +93,18 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
   private var athenaItem: NSMenuItem?
   private var voiceDiagnosticItem: NSMenuItem?
   private var microphoneDiagnosticItem: NSMenuItem?
+
+  var installedMenu: NSMenu? {
+    statusItem?.menu
+  }
+
+  init(
+    shortcutSettingsPresenter:
+      (any ShortcutSettingsPresenting)? = nil
+  ) {
+    self.shortcutSettingsPresenter = shortcutSettingsPresenter
+    super.init()
+  }
 
   func install(actions: StatusMenuActions) {
     guard statusItem == nil else {
@@ -170,6 +183,12 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     companionItem.submenu = companionMenu
     menu.addItem(companionItem)
 
+    _ = addItem(
+      to: menu,
+      title: "Keyboard Shortcut…",
+      action: #selector(showShortcutSettings)
+    )
+
     let diagnosticsItem = NSMenuItem(
       title: "Diagnostics",
       action: nil,
@@ -205,6 +224,16 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
 
     statusItem.menu = menu
     self.statusItem = statusItem
+  }
+
+  func uninstall() {
+    guard let statusItem else {
+      return
+    }
+
+    NSStatusBar.system.removeStatusItem(statusItem)
+    self.statusItem = nil
+    actions = nil
   }
 
   func render(_ snapshot: CompanionSnapshot) {
@@ -296,6 +325,20 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     Task {
       await actions?.selectAvatar(.athena)
     }
+  }
+
+  @objc
+  private func showShortcutSettings() {
+    guard
+      let positioningView = statusItem?.button,
+      let shortcutSettingsPresenter
+    else {
+      return
+    }
+
+    shortcutSettingsPresenter.show(
+      relativeTo: positioningView
+    )
   }
 
   @objc

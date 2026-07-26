@@ -66,22 +66,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       )
     )
+    let shortcutRegistrar = CarbonGlobalShortcutRegistrar()
+    let shortcutController = GlobalShortcutController(
+      registrar: shortcutRegistrar
+    )
+    let shortcutInvocation: @MainActor () -> Void = {
+      [weak runtime] in
+      Task {
+        await runtime?.send(.summon(.keyboardShortcut))
+      }
+    }
+    _ = shortcutController.activate(
+      preferences.shortcut,
+      onInvocation: shortcutInvocation
+    )
+    let shortcutSettings =
+      ShortcutSettingsPopoverController(
+        shortcutController: shortcutController,
+        availabilityRegistrar: shortcutRegistrar,
+        preferencesStore: preferencesStore,
+        onShortcutInvocation: shortcutInvocation
+      )
     let coordinator = ApplicationCoordinator(
       runtime: runtime,
-      statusMenu: StatusMenuController(),
+      statusMenu: StatusMenuController(
+        shortcutSettingsPresenter: shortcutSettings
+      ),
       application: NSApplication.shared,
       conversationPresenter: conversationPresenter,
       preferencesStore: preferencesStore,
       initialPreferences: preferences
     )
-    let shortcutController = GlobalShortcutController(
-      registrar: CarbonGlobalShortcutRegistrar()
-    )
-    _ = shortcutController.activate(preferences.shortcut) {
-      Task {
-        await runtime.send(.summon(.keyboardShortcut))
-      }
-    }
     let platformEventMonitor = MacPlatformEventMonitor { event in
       await runtime.send(.platform(event))
     }
