@@ -294,7 +294,7 @@ struct AudioRouteMonitorTests {
     let initialRoute = AudioRouteSnapshot(
       inputDevice: AudioDeviceID(17),
       outputDevice: AudioDeviceID(23),
-      inputDataSources: [41],
+      inputDataSources: [41, 47],
       outputDataSources: [43]
     )
     let hardware = ScriptedAudioRouteHardware(route: initialRoute)
@@ -310,7 +310,7 @@ struct AudioRouteMonitorTests {
     hardware.route = AudioRouteSnapshot(
       inputDevice: AudioDeviceID(17),
       outputDevice: AudioDeviceID(23),
-      inputDataSources: [47],
+      inputDataSources: [41, 53],
       outputDataSources: [43]
     )
     hardware.emitChange()
