@@ -11,7 +11,19 @@ const LOOPBACK_HOST = "127.0.0.1";
 const REALTIME_CLIENT_SECRETS_URL =
   "https://api.openai.com/v1/realtime/client_secrets";
 const V1_MODEL = "gpt-realtime-2.1";
-const V1_VOICE = "marin";
+const V1_DEFAULT_VOICE = "marin";
+const V1_VOICES: ReadonlySet<string> = new Set([
+  "alloy",
+  "ash",
+  "ballad",
+  "coral",
+  "echo",
+  "sage",
+  "shimmer",
+  "verse",
+  "marin",
+  "cedar",
+]);
 
 export interface StartBrokerOptions {
   apiKey: string | undefined;
@@ -88,7 +100,7 @@ async function handleRequest(
   const requestedConfig = await readRequestedConfig(request);
   if (
     requestedConfig.model !== V1_MODEL ||
-    requestedConfig.voice !== V1_VOICE
+    !V1_VOICES.has(requestedConfig.voice)
   ) {
     sendJson(response, 400, { error: "configuration_not_allowed" });
     return;
@@ -101,7 +113,7 @@ async function handleRequest(
         session: {
           audio: {
             output: {
-              voice: V1_VOICE,
+              voice: requestedConfig.voice,
             },
           },
           model: V1_MODEL,
@@ -171,7 +183,10 @@ async function readRequestedConfig(
 
   return {
     model: body.model === undefined ? V1_MODEL : String(body.model),
-    voice: body.voice === undefined ? V1_VOICE : String(body.voice),
+    voice:
+      body.voice === undefined
+        ? V1_DEFAULT_VOICE
+        : String(body.voice),
   };
 }
 

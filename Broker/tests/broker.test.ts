@@ -133,6 +133,64 @@ test("requests a client secret with only allowlisted session config", async (con
   });
 });
 
+test("accepts and forwards every approved V1 voice", async (context) => {
+  const approvedVoices = [
+    "alloy",
+    "ash",
+    "ballad",
+    "coral",
+    "echo",
+    "sage",
+    "shimmer",
+    "verse",
+    "marin",
+    "cedar",
+  ];
+  const upstreamVoices: string[] = [];
+  const broker = await startBroker({
+    apiKey: "sk-standard-secret",
+    bearerToken: "test-launch-bearer",
+    safetyIdentifier: "local-test-user",
+    upstreamFetch: async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        session: {
+          audio: {
+            output: {
+              voice: string;
+            };
+          };
+        };
+      };
+      upstreamVoices.push(body.session.audio.output.voice);
+      return Response.json({
+        expires_at: 1_900_000_000,
+        value: "ek_short_lived_secret",
+      });
+    },
+  });
+  context.after(() => broker.close());
+
+  for (const voice of approvedVoices) {
+    const response = await fetch(
+      `${broker.origin}/v1/realtime/client-secret`,
+      {
+        body: JSON.stringify({
+          model: "gpt-realtime-2.1",
+          voice,
+        }),
+        headers: {
+          authorization: "Bearer test-launch-bearer",
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+
+    assert.equal(response.status, 200, voice);
+  }
+  assert.deepEqual(upstreamVoices, approvedVoices);
+});
+
 test("returns only the short-lived client secret fields", async (context) => {
   const broker = await startBroker({
     apiKey: "sk-standard-secret",
@@ -184,25 +242,35 @@ test("rejects model and voice values outside the V1 allowlist", async (context) 
   });
   context.after(() => broker.close());
 
-  const response = await fetch(
-    `${broker.origin}/v1/realtime/client-secret`,
+  const rejectedConfigurations = [
     {
-      body: JSON.stringify({
-        model: "unapproved-model",
-        voice: "unapproved-voice",
-      }),
-      headers: {
-        authorization: "Bearer test-launch-bearer",
-        "content-type": "application/json",
-      },
-      method: "POST",
+      model: "unapproved-model",
+      voice: "marin",
     },
-  );
+    {
+      model: "gpt-realtime-2.1",
+      voice: "unapproved-voice",
+    },
+  ];
 
-  assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), {
-    error: "configuration_not_allowed",
-  });
+  for (const configuration of rejectedConfigurations) {
+    const response = await fetch(
+      `${broker.origin}/v1/realtime/client-secret`,
+      {
+        body: JSON.stringify(configuration),
+        headers: {
+          authorization: "Bearer test-launch-bearer",
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "configuration_not_allowed",
+    });
+  }
   assert.equal(upstreamRequestCount, 0);
 });
 
