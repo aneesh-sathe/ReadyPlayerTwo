@@ -517,6 +517,9 @@ public final class CompanionRuntime {
         waveformEnergy = 0
       }
     case .ended:
+      if case .error = voiceState {
+        return
+      }
       voiceState = .idle
       bubbleState = .hidden
       waveformEnergy = 0

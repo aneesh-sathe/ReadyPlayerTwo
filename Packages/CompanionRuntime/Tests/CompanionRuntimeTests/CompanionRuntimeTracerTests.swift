@@ -172,9 +172,10 @@ struct CompanionRuntimeTracerTests {
   @Test
   func voiceFailureStopsCaptureAndRequiresExplicitRetry() async throws {
     let voice = ScriptedVoiceSession()
+    let stage = RecordingStage()
     let runtime = CompanionRuntime(
       initialPreferences: CompanionPreferences(presence: .parked),
-      stage: RecordingStage(),
+      stage: stage,
       voice: voice,
       platform: FixedPlatform(),
       clock: ImmediateClock(),
@@ -200,6 +201,14 @@ struct CompanionRuntimeTracerTests {
     #expect(failed.basePresence == .parked)
     #expect(voice.startCount == 1)
     #expect(voice.stopCount == 1)
+
+    voice.emit(.ended)
+    await Task.yield()
+    await Task.yield()
+
+    let recoveryState = try #require(stage.renderedSnapshots.last)
+    #expect(recoveryState.voice == .error(failure))
+    #expect(recoveryState.recoverableError == failure)
 
     await runtime.send(.retryConversation)
 
