@@ -46,6 +46,10 @@ struct CompanionRuntimeTracerTests {
     #expect(listening.isVisible)
 
     await runtime.send(.summon(.keyboardShortcut))
+
+    let revealedValue = await snapshots.next()
+    let revealed = try #require(revealedValue)
+    #expect(revealed.voice == .listening)
     #expect(voice.startCount == 1)
 
     await runtime.send(.endConversation)
