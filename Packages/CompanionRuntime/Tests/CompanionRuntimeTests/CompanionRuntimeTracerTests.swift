@@ -8,6 +8,7 @@ struct CompanionRuntimeTracerTests {
   func explicitSummonIsSingletonAndRestoresRoaming() async throws {
     let stage = RecordingStage()
     let voice = ScriptedVoiceSession()
+    let clock = ControllableClock()
     let runtime = CompanionRuntime(
       initialPreferences: CompanionPreferences(
         avatar: .orion,
@@ -16,7 +17,7 @@ struct CompanionRuntimeTracerTests {
       stage: stage,
       voice: voice,
       platform: FixedPlatform(),
-      clock: ImmediateClock(),
+      clock: clock,
       randomness: FixedRandomSource()
     )
     var snapshots = runtime.snapshots.makeAsyncIterator()
@@ -44,6 +45,7 @@ struct CompanionRuntimeTracerTests {
     let listening = try #require(listeningValue)
     #expect(listening.voice == .listening)
     #expect(listening.isVisible)
+    await clock.waitForRequestCount(1)
 
     await runtime.send(.summon(.keyboardShortcut))
 
@@ -66,6 +68,11 @@ struct CompanionRuntimeTracerTests {
     #expect(ended.voice == .idle)
     #expect(ended.basePresence == .roaming)
     #expect(ended.isVisible)
+
+    await clock.advance(by: .seconds(180))
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 1)
+    #expect(clock.cancellationCount == 1)
   }
 
   @Test
@@ -76,7 +83,7 @@ struct CompanionRuntimeTracerTests {
       stage: RecordingStage(),
       voice: voice,
       platform: FixedPlatform(),
-      clock: ImmediateClock(),
+      clock: ControllableClock(),
       randomness: FixedRandomSource()
     )
     var snapshots = runtime.snapshots.makeAsyncIterator()
@@ -138,7 +145,7 @@ struct CompanionRuntimeTracerTests {
       stage: RecordingStage(),
       voice: voice,
       platform: FixedPlatform(),
-      clock: ImmediateClock(),
+      clock: ControllableClock(),
       randomness: FixedRandomSource()
     )
     var snapshots = runtime.snapshots.makeAsyncIterator()
@@ -173,12 +180,13 @@ struct CompanionRuntimeTracerTests {
   func voiceFailureStopsCaptureAndRequiresExplicitRetry() async throws {
     let voice = ScriptedVoiceSession()
     let stage = RecordingStage()
+    let clock = ControllableClock()
     let runtime = CompanionRuntime(
       initialPreferences: CompanionPreferences(presence: .parked),
       stage: stage,
       voice: voice,
       platform: FixedPlatform(),
-      clock: ImmediateClock(),
+      clock: clock,
       randomness: FixedRandomSource()
     )
     var snapshots = runtime.snapshots.makeAsyncIterator()
@@ -187,6 +195,8 @@ struct CompanionRuntimeTracerTests {
     _ = await snapshots.next()
     await runtime.send(.summon(.keyboardShortcut))
     _ = await snapshots.next()
+    await clock.waitForRequestCount(1)
+    await clock.advance(by: .seconds(30))
 
     let failure = CompanionFailure(
       kind: .network,
@@ -199,6 +209,10 @@ struct CompanionRuntimeTracerTests {
     #expect(failed.voice == .error(failure))
     #expect(failed.recoverableError == failure)
     #expect(failed.basePresence == .parked)
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 1)
+
+    await clock.advance(by: .seconds(30))
     #expect(voice.startCount == 1)
     #expect(voice.stopCount == 1)
 
@@ -217,6 +231,7 @@ struct CompanionRuntimeTracerTests {
     #expect(retry.voice == .connecting)
     #expect(retry.recoverableError == nil)
     #expect(voice.startCount == 2)
+    await clock.waitForRequestCount(2)
 
     voice.emit(.listening)
 
@@ -225,6 +240,125 @@ struct CompanionRuntimeTracerTests {
     #expect(listening.voice == .listening)
     #expect(listening.basePresence == .parked)
     #expect(voice.startCount == 2)
+
+    await clock.advance(by: .seconds(60))
+    let timedOut = try #require(stage.renderedSnapshots.last)
+    #expect(timedOut.voice == .ending)
+    #expect(voice.startCount == 2)
+    #expect(voice.stopCount == 2)
+  }
+
+  @Test
+  func delayedStartFailureCannotOverwriteACompletedTeardown() async throws {
+    for teardown in DelayedStartTeardown.allCases {
+      let stage = RecordingStage()
+      let voice = DelayedStartVoiceSession()
+      let clock = ControllableClock()
+      let runtime = CompanionRuntime(
+        initialPreferences: CompanionPreferences(),
+        stage: stage,
+        voice: voice,
+        platform: FixedPlatform(),
+        clock: clock,
+        randomness: FixedRandomSource()
+      )
+
+      await runtime.send(.launch)
+      let summonTask = Task { @MainActor in
+        await runtime.send(.summon(.statusMenu))
+      }
+      await voice.waitUntilStartIsPending()
+      await clock.waitForRequestCount(1)
+
+      let expectedVoice: VoiceSessionState
+      switch teardown {
+      case .explicitEnd:
+        await runtime.send(.endConversation)
+        expectedVoice = .ending
+      case .timeout:
+        await clock.advance(by: .seconds(60))
+        expectedVoice = .ending
+      case .sleep:
+        await runtime.send(.platform(.sleep))
+        expectedVoice = .ending
+      case .endedEvent:
+        voice.emit(.ended)
+        await clock.advance(by: .zero)
+        expectedVoice = .idle
+      }
+
+      voice.failPendingStart()
+      await summonTask.value
+      await clock.advance(by: .zero)
+
+      let settled = try #require(stage.renderedSnapshots.last)
+      #expect(settled.voice == expectedVoice)
+      #expect(settled.recoverableError == nil)
+      #expect(voice.startCount == 1)
+      #expect(voice.stopCount == (teardown == .endedEvent ? 0 : 1))
+    }
+  }
+
+  @Test
+  func endAndHideDismissRecoverableErrorsWithoutStoppingAgain() async throws {
+    let failure = CompanionFailure(
+      kind: .network,
+      message: "Connection lost. Retry when ready."
+    )
+
+    do {
+      let stage = RecordingStage()
+      let voice = ScriptedVoiceSession()
+      let clock = ControllableClock()
+      let runtime = CompanionRuntime(
+        initialPreferences: CompanionPreferences(),
+        stage: stage,
+        voice: voice,
+        platform: FixedPlatform(),
+        clock: clock,
+        randomness: FixedRandomSource()
+      )
+      await runtime.send(.launch)
+      await runtime.send(.summon(.character))
+      voice.emit(.failed(failure))
+      await clock.advance(by: .zero)
+      #expect(voice.stopCount == 1)
+
+      await runtime.send(.endConversation)
+      let dismissed = try #require(stage.renderedSnapshots.last)
+      #expect(dismissed.voice == .idle)
+      #expect(dismissed.bubble == .hidden)
+      #expect(dismissed.recoverableError == nil)
+      #expect(voice.stopCount == 1)
+    }
+
+    do {
+      let stage = RecordingStage()
+      let voice = ScriptedVoiceSession()
+      let clock = ControllableClock()
+      let runtime = CompanionRuntime(
+        initialPreferences: CompanionPreferences(),
+        stage: stage,
+        voice: voice,
+        platform: FixedPlatform(),
+        clock: clock,
+        randomness: FixedRandomSource()
+      )
+      await runtime.send(.launch)
+      await runtime.send(.summon(.statusMenu))
+      voice.emit(.failed(failure))
+      await clock.advance(by: .zero)
+      #expect(voice.stopCount == 1)
+
+      await runtime.send(.setPresence(.hidden))
+      let dismissed = try #require(stage.renderedSnapshots.last)
+      #expect(dismissed.voice == .idle)
+      #expect(dismissed.bubble == .hidden)
+      #expect(dismissed.basePresence == .hidden)
+      #expect(!dismissed.isVisible)
+      #expect(dismissed.recoverableError == nil)
+      #expect(voice.stopCount == 1)
+    }
   }
 
   @Test
@@ -251,7 +385,7 @@ struct CompanionRuntimeTracerTests {
       stage: RecordingStage(),
       voice: ScriptedVoiceSession(),
       platform: platform,
-      clock: ImmediateClock(),
+      clock: ControllableClock(),
       randomness: FixedRandomSource()
     )
     var snapshots = runtime.snapshots.makeAsyncIterator()
@@ -303,7 +437,7 @@ struct CompanionRuntimeTracerTests {
       stage: stage,
       voice: voice,
       platform: platform,
-      clock: ImmediateClock(),
+      clock: ControllableClock(),
       randomness: FixedRandomSource()
     )
     var snapshots = runtime.snapshots.makeAsyncIterator()
@@ -337,12 +471,13 @@ struct CompanionRuntimeTracerTests {
   @Test
   func sleepEndsVoiceAndWakeNeverReconnects() async throws {
     let voice = ScriptedVoiceSession()
+    let clock = ControllableClock()
     let runtime = CompanionRuntime(
       initialPreferences: CompanionPreferences(),
       stage: RecordingStage(),
       voice: voice,
       platform: FixedPlatform(),
-      clock: ImmediateClock(),
+      clock: clock,
       randomness: FixedRandomSource()
     )
     var snapshots = runtime.snapshots.makeAsyncIterator()
@@ -353,6 +488,7 @@ struct CompanionRuntimeTracerTests {
     _ = await snapshots.next()
     voice.emit(.listening)
     _ = await snapshots.next()
+    await clock.waitForRequestCount(1)
 
     await runtime.send(.platform(.sleep))
 
@@ -377,6 +513,129 @@ struct CompanionRuntimeTracerTests {
     #expect(awake.isVisible)
     #expect(voice.startCount == 1)
     #expect(voice.stopCount == 1)
+
+    await clock.advance(by: .seconds(180))
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 1)
+  }
+
+  @Test
+  func silentSummonEndsAfterTheFirstSpeechDeadlineExactlyOnce() async throws {
+    let stage = RecordingStage()
+    let voice = ScriptedVoiceSession()
+    let clock = ControllableClock()
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: stage,
+      voice: voice,
+      platform: FixedPlatform(),
+      clock: clock,
+      randomness: FixedRandomSource()
+    )
+
+    await runtime.send(.launch)
+    await runtime.send(.summon(.statusMenu))
+    voice.emit(.listening)
+    await clock.waitForRequestCount(1)
+
+    #expect(clock.requestedDurations == [.seconds(60)])
+    await clock.advance(by: .seconds(59))
+    #expect(voice.stopCount == 0)
+
+    await clock.advance(by: .seconds(1))
+    let timedOut = try #require(stage.renderedSnapshots.last)
+    #expect(timedOut.voice == .ending)
+    #expect(timedOut.bubble == .ending)
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 1)
+
+    await clock.advance(by: .seconds(600))
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 1)
+    #expect(voice.muteValues.isEmpty)
+  }
+
+  @Test
+  func committedPersonSpeechStartsAndAloneResetsTheOngoingDeadline() async throws {
+    let stage = RecordingStage()
+    let voice = ScriptedVoiceSession()
+    let clock = ControllableClock()
+    let runtime = CompanionRuntime(
+      initialPreferences: CompanionPreferences(),
+      stage: stage,
+      voice: voice,
+      platform: FixedPlatform(),
+      clock: clock,
+      randomness: FixedRandomSource()
+    )
+
+    await runtime.send(.launch)
+    await runtime.send(.summon(.keyboardShortcut))
+    await clock.waitForRequestCount(1)
+
+    voice.emit(.thinking)
+    await clock.waitForRequestCount(2)
+    #expect(
+      clock.requestedDurations == [
+        .seconds(60),
+        .seconds(120),
+      ]
+    )
+
+    await clock.advance(by: .seconds(60))
+    voice.emit(.speaking)
+    await clock.advance(by: .seconds(59))
+    #expect(voice.stopCount == 0)
+
+    voice.emit(.thinking)
+    await clock.waitForRequestCount(3)
+    await clock.advance(by: .seconds(100))
+    voice.emit(.listening)
+    await clock.advance(by: .seconds(19))
+    #expect(voice.stopCount == 0)
+
+    await clock.advance(by: .seconds(1))
+    let timedOut = try #require(stage.renderedSnapshots.last)
+    #expect(timedOut.voice == .ending)
+    #expect(
+      clock.requestedDurations == [
+        .seconds(60),
+        .seconds(120),
+        .seconds(120),
+      ]
+    )
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 1)
+  }
+
+  @Test
+  func deinitializationCancelsAStaleInactivityDeadline() async {
+    let voice = ScriptedVoiceSession()
+    let clock = ControllableClock()
+    weak var releasedRuntime: CompanionRuntime?
+
+    do {
+      let runtime = CompanionRuntime(
+        initialPreferences: CompanionPreferences(),
+        stage: RecordingStage(),
+        voice: voice,
+        platform: FixedPlatform(),
+        clock: clock,
+        randomness: FixedRandomSource()
+      )
+      releasedRuntime = runtime
+      await runtime.send(.launch)
+      await runtime.send(.summon(.character))
+      await clock.waitForRequestCount(1)
+    }
+
+    await clock.advance(by: .zero)
+    #expect(releasedRuntime == nil)
+    #expect(clock.cancellationCount == 1)
+
+    await clock.advance(by: .seconds(60))
+    #expect(voice.startCount == 1)
+    #expect(voice.stopCount == 0)
   }
 
   @Test
@@ -387,7 +646,7 @@ struct CompanionRuntimeTracerTests {
       stage: RecordingStage(),
       voice: voice,
       platform: FixedPlatform(),
-      clock: ImmediateClock(),
+      clock: ControllableClock(),
       randomness: FixedRandomSource()
     )
     var snapshots = runtime.snapshots.makeAsyncIterator()
@@ -439,12 +698,74 @@ struct CompanionRuntimeTracerTests {
   }
 }
 
+private enum DelayedStartTeardown: CaseIterable {
+  case explicitEnd
+  case timeout
+  case sleep
+  case endedEvent
+}
+
 @MainActor
 private final class RecordingStage: StagePort {
   private(set) var renderedSnapshots: [CompanionSnapshot] = []
 
   func render(_ snapshot: CompanionSnapshot) async {
     renderedSnapshots.append(snapshot)
+  }
+}
+
+@MainActor
+private final class DelayedStartVoiceSession: VoiceSessionPort {
+  let events: AsyncStream<VoiceSessionEvent>
+
+  private let continuation: AsyncStream<VoiceSessionEvent>.Continuation
+  private var pendingStart: CheckedContinuation<Void, any Error>?
+  private(set) var startCount = 0
+  private(set) var stopCount = 0
+
+  init() {
+    let stream = AsyncStream<VoiceSessionEvent>.makeStream()
+    events = stream.stream
+    continuation = stream.continuation
+  }
+
+  func start() async throws {
+    startCount += 1
+    try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<Void, any Error>) in
+      pendingStart = continuation
+    }
+  }
+
+  func stop() async {
+    stopCount += 1
+  }
+
+  func setMuted(_ isMuted: Bool) async {}
+
+  func emit(_ event: VoiceSessionEvent) {
+    continuation.yield(event)
+  }
+
+  func waitUntilStartIsPending() async {
+    for _ in 0..<100 {
+      if pendingStart != nil {
+        return
+      }
+      await Task.yield()
+    }
+    Issue.record("Expected a pending voice start")
+  }
+
+  func failPendingStart() {
+    let continuation = pendingStart
+    pendingStart = nil
+    continuation?.resume(
+      throwing: CompanionFailure(
+        kind: .network,
+        message: "Late start failure."
+      )
+    )
   }
 }
 
@@ -501,8 +822,75 @@ private final class MutablePlatform: PlatformPort {
 }
 
 @MainActor
-private struct ImmediateClock: RuntimeClock {
-  func sleep(for duration: Duration) async throws {}
+private final class ControllableClock: RuntimeClock {
+  private struct Sleeper {
+    let deadline: Duration
+    let continuation: CheckedContinuation<Void, any Error>
+  }
+
+  private var now = Duration.zero
+  private var nextID = 0
+  private var sleepers: [Int: Sleeper] = [:]
+  private(set) var requestedDurations: [Duration] = []
+  private(set) var cancellationCount = 0
+
+  func sleep(for duration: Duration) async throws {
+    let id = nextID
+    nextID += 1
+    requestedDurations.append(duration)
+
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Void, any Error>) in
+        guard !Task.isCancelled else {
+          continuation.resume(throwing: CancellationError())
+          return
+        }
+        sleepers[id] = Sleeper(
+          deadline: now + duration,
+          continuation: continuation
+        )
+      }
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        self?.cancelSleep(id: id)
+      }
+    }
+  }
+
+  func waitForRequestCount(_ expectedCount: Int) async {
+    for _ in 0..<100 {
+      if requestedDurations.count >= expectedCount {
+        return
+      }
+      await Task.yield()
+    }
+    Issue.record(
+      "Expected \(expectedCount) clock requests, got \(requestedDurations.count)"
+    )
+  }
+
+  func advance(by duration: Duration) async {
+    now += duration
+    let readyIDs = sleepers.compactMap { id, sleeper in
+      sleeper.deadline <= now ? id : nil
+    }
+    let ready = readyIDs.compactMap { sleepers.removeValue(forKey: $0) }
+    for sleeper in ready {
+      sleeper.continuation.resume()
+    }
+    for _ in 0..<8 {
+      await Task.yield()
+    }
+  }
+
+  private func cancelSleep(id: Int) {
+    guard let sleeper = sleepers.removeValue(forKey: id) else {
+      return
+    }
+    cancellationCount += 1
+    sleeper.continuation.resume(throwing: CancellationError())
+  }
 }
 
 @MainActor

@@ -255,6 +255,9 @@ public protocol RandomSource {
 public final class CompanionRuntime {
   public let snapshots: AsyncStream<CompanionSnapshot>
 
+  private static let firstSpeechDeadline = Duration.seconds(60)
+  private static let ongoingSpeechDeadline = Duration.seconds(120)
+
   private let stage: any StagePort
   private let voice: any VoiceSessionPort
   private let platform: any PlatformPort
@@ -276,6 +279,9 @@ public final class CompanionRuntime {
   private var recoverableError: CompanionFailure?
   private var stageSuppressed = false
   private var voiceEventTask: Task<Void, Never>?
+  private var inactivityTask: Task<Void, Never>?
+  private var inactivityGeneration = 0
+  private var voiceStartGeneration = 0
 
   public init(
     initialPreferences: CompanionPreferences,
@@ -295,6 +301,11 @@ public final class CompanionRuntime {
     self.platform = platform
     self.clock = clock
     self.randomness = randomness
+  }
+
+  deinit {
+    inactivityTask?.cancel()
+    voiceEventTask?.cancel()
   }
 
   public func send(_ command: CompanionCommand) async {
@@ -323,23 +334,13 @@ public final class CompanionRuntime {
       await startVoiceSession()
 
     case .endConversation:
-      guard voiceState != .idle, voiceState != .ending else {
-        return
-      }
-
-      voiceState = .ending
-      bubbleState = .ending
-      await publish()
-      await voice.stop()
+      await endActiveConversation()
 
     case .setPresence(let presence):
       basePresence = presence
 
       if presence == .hidden, voiceState != .idle, voiceState != .ending {
-        voiceState = .ending
-        bubbleState = .ending
-        await publish()
-        await voice.stop()
+        await endActiveConversation()
       } else {
         await publish()
       }
@@ -424,10 +425,7 @@ public final class CompanionRuntime {
       stageSuppressed = true
 
       if voiceState != .idle, voiceState != .ending {
-        voiceState = .ending
-        bubbleState = .ending
-        await publish()
-        await voice.stop()
+        await endActiveConversation()
       } else {
         await publish()
       }
@@ -451,27 +449,40 @@ public final class CompanionRuntime {
   }
 
   private func startVoiceSession() async {
+    cancelInactivityDeadline()
+    voiceStartGeneration &+= 1
+    let startGeneration = voiceStartGeneration
     observeVoiceEventsIfNeeded()
     voiceState = .connecting
     bubbleState = .connecting
     waveformEnergy = 0
     recoverableError = nil
+    scheduleInactivityDeadline(after: Self.firstSpeechDeadline)
     await publish()
 
     do {
       try await voice.start()
     } catch {
+      guard
+        voiceStartGeneration == startGeneration,
+        acceptsActiveVoiceEvents
+      else {
+        return
+      }
+
+      invalidateVoiceStartAttempt()
+      cancelInactivityDeadline()
       let failure =
         (error as? CompanionFailure)
         ?? CompanionFailure(
           kind: .unknown,
           message: "Voice could not start."
         )
-      await voice.stop()
       voiceState = .error(failure)
       bubbleState = .error(failure.message)
       waveformEnergy = 0
       recoverableError = failure
+      await voice.stop()
       await publish()
     }
   }
@@ -495,28 +506,46 @@ public final class CompanionRuntime {
   private func receive(_ event: VoiceSessionEvent) async {
     switch event {
     case .listening:
+      guard acceptsActiveVoiceEvents else {
+        return
+      }
       voiceState = .listening
       bubbleState = .listening
       waveformEnergy = 0
     case .thinking:
+      guard acceptsActiveVoiceEvents else {
+        return
+      }
+      scheduleInactivityDeadline(after: Self.ongoingSpeechDeadline)
       voiceState = .thinking
       bubbleState = .thinking
       waveformEnergy = 0
     case .speaking:
+      guard acceptsActiveVoiceEvents else {
+        return
+      }
       voiceState = .speaking
       bubbleState = .speaking
       waveformEnergy = 0
     case .muted:
+      guard acceptsActiveVoiceEvents else {
+        return
+      }
       voiceState = .muted
       bubbleState = .muted
       waveformEnergy = 0
     case .audioEnergy(let energy):
+      guard acceptsActiveVoiceEvents else {
+        return
+      }
       if voiceState == .listening || voiceState == .speaking {
         waveformEnergy = min(max(energy, 0), 1)
       } else {
         waveformEnergy = 0
       }
     case .ended:
+      invalidateVoiceStartAttempt()
+      cancelInactivityDeadline()
       if case .error = voiceState {
         return
       }
@@ -525,6 +554,14 @@ public final class CompanionRuntime {
       waveformEnergy = 0
       recoverableError = nil
     case .failed(let failure):
+      guard voiceState != .idle, voiceState != .ending else {
+        return
+      }
+      if case .error = voiceState {
+        return
+      }
+      invalidateVoiceStartAttempt()
+      cancelInactivityDeadline()
       voiceState = .error(failure)
       bubbleState = .error(failure.message)
       waveformEnergy = 0
@@ -532,6 +569,77 @@ public final class CompanionRuntime {
       await voice.stop()
     }
 
+    await publish()
+  }
+
+  private var acceptsActiveVoiceEvents: Bool {
+    switch voiceState {
+    case .connecting, .listening, .thinking, .speaking, .muted:
+      true
+    case .idle, .error, .ending:
+      false
+    }
+  }
+
+  private func scheduleInactivityDeadline(after duration: Duration) {
+    inactivityGeneration &+= 1
+    let generation = inactivityGeneration
+    inactivityTask?.cancel()
+    let clock = self.clock
+
+    inactivityTask = Task { @MainActor [weak self] in
+      do {
+        try await clock.sleep(for: duration)
+      } catch {
+        return
+      }
+
+      guard
+        let self,
+        inactivityGeneration == generation,
+        acceptsActiveVoiceEvents
+      else {
+        return
+      }
+      await endActiveConversation()
+    }
+  }
+
+  private func cancelInactivityDeadline() {
+    inactivityGeneration &+= 1
+    inactivityTask?.cancel()
+    inactivityTask = nil
+  }
+
+  private func invalidateVoiceStartAttempt() {
+    voiceStartGeneration &+= 1
+  }
+
+  private func endActiveConversation() async {
+    if case .error = voiceState {
+      await dismissRecoverableError()
+      return
+    }
+    guard voiceState != .idle, voiceState != .ending else {
+      return
+    }
+
+    invalidateVoiceStartAttempt()
+    cancelInactivityDeadline()
+    voiceState = .ending
+    bubbleState = .ending
+    waveformEnergy = 0
+    await publish()
+    await voice.stop()
+  }
+
+  private func dismissRecoverableError() async {
+    invalidateVoiceStartAttempt()
+    cancelInactivityDeadline()
+    voiceState = .idle
+    bubbleState = .hidden
+    waveformEnergy = 0
+    recoverableError = nil
     await publish()
   }
 
