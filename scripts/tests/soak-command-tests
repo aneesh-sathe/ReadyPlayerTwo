@@ -1,0 +1,23 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "${0:A:h:h}/lib.zsh"
+
+set +e
+invalid_output="$(
+  env \
+    -u OPENAI_API_KEY \
+    RPT_SOAK_DURATION_SECONDS=not-a-duration \
+    "$RPT_SCRIPT_DIR/soak" \
+    2>&1
+)"
+invalid_status="$?"
+set -e
+
+[[ "$invalid_status" == "1" ]] ||
+  rpt_die "An invalid soak duration must exit with status 1."
+[[ "$invalid_output" == *"RPT_SOAK_DURATION_SECONDS must be a whole number"* ]] ||
+  rpt_die "An invalid soak duration must explain the accepted input."
+
+rpt_note "Soak command tests passed."
