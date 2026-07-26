@@ -73,7 +73,9 @@ Use one character-sized transparent, borderless, non-activating `NSPanel` rather
 - The Companion keeps a consistent point size across Retina and non-Retina displays.
 - Roaming and Park follow the active regular Space without duplication.
 - Roaming and Park hide in another app's native full-screen Space. An explicit Summon may reveal the Companion there for the Voice Session.
-- Screen lock, screen saver, Mission Control, and sleep hide or pause the Stage.
+- Screen lock, screen saver, and sleep hide or pause the Stage. AppKit has no
+  public Mission Control lifecycle event, so that transition requires manual
+  target-macOS validation and is not an automatic v1 suppression guarantee.
 - Sleep or lock ends an active Voice Session. Wake never reopens the microphone or reconnects automatically.
 
 Transparent regions must be genuinely click-through:
