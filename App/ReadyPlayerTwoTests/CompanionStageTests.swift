@@ -106,10 +106,114 @@ struct CompanionStageTests {
     #expect(stage.panel.frame.origin == NSPoint(x: 588, y: 336))
   }
 
+  @Test
+  func reduceMotionKeepsRoamingStaticAndFullyVisible() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let driver = ManualCompanionStageFrameDriver()
+    let stage = try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(
+        surface: CompanionStageSurface(
+          visibleFrame: NSRect(x: 0, y: 0, width: 1_280, height: 800),
+          scaleFactor: 2
+        )
+      ),
+      frameDriver: driver,
+      motionPreference: FixedCompanionStageMotionPreference(
+        shouldReduceMotion: true
+      ),
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .athena,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+    driver.advance(by: 1)
+
+    #expect(stage.currentMotionPlan == nil)
+    #expect(stage.currentAnimationState == AnimationStateID("front-neutral"))
+    #expect(
+      stage.currentFrameURLs.first?.lastPathComponent
+        == "angel-front-neutral.png"
+    )
+    #expect(stage.characterCenter == StagePoint(x: 640, y: 400))
+    #expect(!driver.isRunning)
+  }
+
+  @Test
+  func summonSettlesInPlaceAndAvatarSwitchCrossfades() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let driver = ManualCompanionStageFrameDriver()
+    let stage = try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(
+        surface: CompanionStageSurface(
+          visibleFrame: NSRect(x: 0, y: 0, width: 1_280, height: 800),
+          scaleFactor: 2
+        )
+      ),
+      frameDriver: driver,
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+    driver.advance(by: 0.25)
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .athena,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400),
+        voice: .listening
+      )
+    )
+
+    #expect(stage.characterCenter == StagePoint(x: 652, y: 400))
+    #expect(stage.currentMotionPlan == nil)
+    #expect(stage.currentAnimationState == AnimationStateID("front-neutral"))
+    #expect(
+      stage.currentFrameURLs.first?.lastPathComponent
+        == "angel-front-neutral.png"
+    )
+    #expect(stage.lastCrossfadeDuration == 0.2)
+    #expect(!driver.isRunning)
+    #expect(stage.panel.collectionBehavior.contains(.fullScreenAuxiliary))
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .athena,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400),
+        voice: .speaking
+      )
+    )
+
+    #expect(stage.currentAnimationState == AnimationStateID("front-happy"))
+    #expect(
+      stage.currentFrameURLs.first?.lastPathComponent
+        == "angel-front-happy.png"
+    )
+  }
+
   private static func snapshot(
     avatar: CompanionAvatar,
     isVisible: Bool,
-    position: StagePoint = StagePoint(x: 640, y: 400)
+    position: StagePoint = StagePoint(x: 640, y: 400),
+    voice: VoiceSessionState = .idle
   ) -> CompanionSnapshot {
     CompanionSnapshot(
       avatar: avatar,
@@ -119,8 +223,8 @@ struct CompanionStageTests {
         displayID: "main",
         position: position
       ),
-      voice: .idle,
-      bubble: .hidden,
+      voice: voice,
+      bubble: voice == .idle ? .hidden : .listening,
       waveformEnergy: 0,
       recoverableError: nil
     )
@@ -157,4 +261,11 @@ private struct FixedCompanionStageTerrain: CompanionStageTerrain {
   func surface(for _: CompanionPlacement) -> CompanionStageSurface {
     surface
   }
+}
+
+@MainActor
+private struct FixedCompanionStageMotionPreference:
+  CompanionStageMotionPreference
+{
+  let shouldReduceMotion: Bool
 }

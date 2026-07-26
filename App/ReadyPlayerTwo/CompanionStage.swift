@@ -94,6 +94,20 @@ final class SceneCompanionStageFrameDriver: CompanionStageFrameDriving {
   }
 }
 
+@MainActor
+protocol CompanionStageMotionPreference {
+  var shouldReduceMotion: Bool { get }
+}
+
+@MainActor
+struct SystemCompanionStageMotionPreference:
+  CompanionStageMotionPreference
+{
+  var shouldReduceMotion: Bool {
+    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+  }
+}
+
 enum CompanionAssets {
   static let orionNeutralRelativePath =
     "assets/avatar-orion/expressions/warrior-front-neutral.png"
@@ -142,6 +156,7 @@ final class CompanionStage: StagePort {
   private let manifests: [CompanionAvatar: AvatarAnimationManifest]
   private let terrain: any CompanionStageTerrain
   private let frameDriver: any CompanionStageFrameDriving
+  private let motionPreference: any CompanionStageMotionPreference
   private let motionPlanner = MotionPlanner()
   private let panelPresentationEnabled: Bool
   private var latestSnapshot: CompanionSnapshot?
@@ -156,6 +171,7 @@ final class CompanionStage: StagePort {
   private(set) var currentAnimationState: AnimationStateID?
   private(set) var currentFrameURLs: [URL] = []
   private(set) var characterCenter = StagePoint(x: 0, y: 0)
+  private(set) var lastCrossfadeDuration = 0.0
 
   var availableAvatars: Set<CompanionAvatar> {
     Set(manifests.keys)
@@ -189,6 +205,8 @@ final class CompanionStage: StagePort {
     terrain: any CompanionStageTerrain = ScreenCompanionStageTerrain(),
     frameDriver suppliedFrameDriver:
       (any CompanionStageFrameDriving)? = nil,
+    motionPreference: any CompanionStageMotionPreference =
+      SystemCompanionStageMotionPreference(),
     panelPresentationEnabled: Bool = true,
     hostsSpriteView: Bool = true
   ) throws {
@@ -217,6 +235,7 @@ final class CompanionStage: StagePort {
 
     manifests = loadedManifests
     self.terrain = terrain
+    self.motionPreference = motionPreference
     self.panelPresentationEnabled = panelPresentationEnabled
     renderer = CompanionSpriteRenderer(
       image: image,
@@ -254,7 +273,9 @@ final class CompanionStage: StagePort {
 
     switch snapshot.voice {
     case .idle:
-      if snapshot.basePresence == .roaming {
+      if snapshot.basePresence == .roaming,
+        !motionPreference.shouldReduceMotion
+      {
         startRoamingIfNeeded(avatarChanged: avatarChanged)
       } else {
         stopMotion()
@@ -459,9 +480,10 @@ final class CompanionStage: StagePort {
     currentAnimationState = animation.id
     currentFrameURLs = animation.frames
     animationElapsed = 0
+    lastCrossfadeDuration = avatarChanged ? 0.2 : 0
     renderer.showAnimation(
       animation,
-      crossfadeDuration: avatarChanged ? 0.2 : 0
+      crossfadeDuration: lastCrossfadeDuration
     )
   }
 
