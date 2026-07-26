@@ -19,6 +19,7 @@ final class WebRTCRealtimeTransport: RealtimeTransportPort {
   private var delegateBridge: WebRTCDelegateBridge?
   private var statisticsTask: Task<Void, Never>?
   private var isClosing = false
+  private var hasReportedConnectionFailure = false
 
   init(callClient: any RealtimeCallClient) {
     self.callClient = callClient
@@ -40,6 +41,7 @@ final class WebRTCRealtimeTransport: RealtimeTransportPort {
     }
 
     isClosing = false
+    hasReportedConnectionFailure = false
     let bridge = makeDelegateBridge()
     let factory = RTCPeerConnectionFactory()
     let audioConstraints = RTCMediaConstraints(
@@ -167,16 +169,9 @@ final class WebRTCRealtimeTransport: RealtimeTransportPort {
           self?.continuation.yield(.serverMessage(data))
         }
       },
-      onChannelClosed: { [weak self] in
+      onConnectionFailure: { [weak self] signal in
         Task { @MainActor [weak self] in
-          self?.reportConnectionFailure(
-            "The realtime event channel closed."
-          )
-        }
-      },
-      onPeerFailed: { [weak self] in
-        Task { @MainActor [weak self] in
-          self?.reportConnectionFailure("The voice connection was lost.")
+          self?.reportConnectionFailure(signal)
         }
       }
     )
@@ -314,17 +309,58 @@ final class WebRTCRealtimeTransport: RealtimeTransportPort {
     }
   }
 
-  private func reportConnectionFailure(_ message: String) {
-    guard !isClosing, peerConnection != nil else {
+  private func reportConnectionFailure(
+    _ signal: WebRTCLifecycleSignal
+  ) {
+    guard
+      !isClosing,
+      peerConnection != nil,
+      !hasReportedConnectionFailure
+    else {
       return
     }
-    continuation.yield(.failed(Self.peerFailure(message)))
+    hasReportedConnectionFailure = true
+    continuation.yield(
+      .failed(WebRTCLifecyclePolicy.failure(for: signal))
+    )
   }
 
   nonisolated private static func peerFailure(
     _ message: String
   ) -> CompanionFailure {
     CompanionFailure(kind: .peerConnection, message: message)
+  }
+}
+
+enum WebRTCLifecycleSignal: Equatable, Sendable {
+  case dataChannelClosed
+  case iceDisconnected
+  case iceFailed
+  case peerDisconnected
+  case peerFailed
+}
+
+enum WebRTCLifecyclePolicy {
+  static func failure(
+    for signal: WebRTCLifecycleSignal
+  ) -> CompanionFailure {
+    switch signal {
+    case .dataChannelClosed:
+      CompanionFailure(
+        kind: .peerConnection,
+        message: "The realtime event channel closed."
+      )
+    case .iceDisconnected, .peerDisconnected:
+      CompanionFailure(
+        kind: .peerConnection,
+        message: "The voice connection was interrupted. Retry to reconnect."
+      )
+    case .iceFailed, .peerFailed:
+      CompanionFailure(
+        kind: .peerConnection,
+        message: "The voice connection was lost."
+      )
+    }
   }
 }
 
@@ -340,22 +376,22 @@ private final class WebRTCDelegateBridge:
   @unchecked Sendable
 {
   private let onMessage: @Sendable (Data) -> Void
-  private let onChannelClosed: @Sendable () -> Void
-  private let onPeerFailed: @Sendable () -> Void
+  private let onConnectionFailure: @Sendable (WebRTCLifecycleSignal) -> Void
 
   init(
     onMessage: @escaping @Sendable (Data) -> Void,
-    onChannelClosed: @escaping @Sendable () -> Void,
-    onPeerFailed: @escaping @Sendable () -> Void
+    onConnectionFailure:
+      @escaping @Sendable (
+        WebRTCLifecycleSignal
+      ) -> Void
   ) {
     self.onMessage = onMessage
-    self.onChannelClosed = onChannelClosed
-    self.onPeerFailed = onPeerFailed
+    self.onConnectionFailure = onConnectionFailure
   }
 
   func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
     if dataChannel.readyState == .closed {
-      onChannelClosed()
+      onConnectionFailure(.dataChannelClosed)
     }
   }
 
@@ -389,8 +425,13 @@ private final class WebRTCDelegateBridge:
     _ peerConnection: RTCPeerConnection,
     didChange newState: RTCIceConnectionState
   ) {
-    if newState == .failed {
-      onPeerFailed()
+    switch newState {
+    case .disconnected:
+      onConnectionFailure(.iceDisconnected)
+    case .failed:
+      onConnectionFailure(.iceFailed)
+    default:
+      break
     }
   }
 
@@ -420,8 +461,13 @@ private final class WebRTCDelegateBridge:
     _ peerConnection: RTCPeerConnection,
     didChange newState: RTCPeerConnectionState
   ) {
-    if newState == .failed {
-      onPeerFailed()
+    switch newState {
+    case .disconnected:
+      onConnectionFailure(.peerDisconnected)
+    case .failed:
+      onConnectionFailure(.peerFailed)
+    default:
+      break
     }
   }
 }
