@@ -246,7 +246,7 @@ test("classifies and redacts upstream authentication failures", async (context) 
   );
 });
 
-test("redacts upstream failure bodies and credentials", async (context) => {
+test("classifies and redacts upstream rate limits", async (context) => {
   const broker = await startBroker({
     apiKey: "sk-standard-secret",
     bearerToken: "test-launch-bearer",
@@ -275,8 +275,8 @@ test("redacts upstream failure bodies and credentials", async (context) => {
   );
   const responseText = await response.text();
 
-  assert.equal(response.status, 502);
-  assert.equal(responseText, '{"error":"upstream_unavailable"}');
+  assert.equal(response.status, 429);
+  assert.equal(responseText, '{"error":"upstream_rate_limited"}');
   assert.doesNotMatch(
     responseText,
     /sk-standard-secret|test-launch-bearer|rejected/i,

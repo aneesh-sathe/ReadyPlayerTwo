@@ -126,6 +126,12 @@ async function handleRequest(
       });
       return;
     }
+    if (upstreamResponse.status === 429) {
+      sendJson(response, 429, {
+        error: "upstream_rate_limited",
+      });
+      return;
+    }
     sendJson(response, 502, { error: "upstream_unavailable" });
     return;
   }
