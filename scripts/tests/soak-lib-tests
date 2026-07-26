@@ -75,6 +75,13 @@ rpt_soak_verify_lineage \
   "$$" \
   "$sampled_process_pid" \
   "$second_process_pid"
+if rpt_soak_verify_lineage \
+  "$sampled_process_pid" \
+  "$second_process_pid" \
+  "$$" \
+  >/dev/null 2>&1; then
+  rpt_die "A broker or app outside the launcher lineage must fail the soak."
+fi
 
 /bin/sleep 30 &
 unexpected_process_pid=$!
@@ -94,6 +101,14 @@ persistent_children="$(
 )"
 [[ "$persistent_children" == "202" ]] ||
   rpt_die "Only a child that survives consecutive samples may fail the soak."
+
+dead_process_pid="$unexpected_process_pid"
+kill -TERM "$unexpected_process_pid"
+wait "$unexpected_process_pid" 2>/dev/null || true
+unexpected_process_pid=0
+if rpt_soak_sample_process "$dead_process_pid" >/dev/null 2>&1; then
+  rpt_die "A dead monitored process must fail the soak."
+fi
 
 rpt_soak_rss_growth_is_unbounded \
   100000 \
