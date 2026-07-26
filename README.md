@@ -30,11 +30,15 @@ Visual presence works without an OpenAI API key:
 ./scripts/run
 ```
 
-To enable voice for that launch, provide the key only to the supervised
-launcher:
+To enable voice for that launch, read the key without echoing it or retaining
+it in shell history, provide it only to the supervised launcher, and clear the
+temporary variable afterward:
 
-```sh
-OPENAI_API_KEY="your-key" ./scripts/run
+```zsh
+read -s "rpt_openai_key?OpenAI API key: "
+printf '\n'
+OPENAI_API_KEY="$rpt_openai_key" ./scripts/run
+unset rpt_openai_key
 ```
 
 The launcher builds a locally signed app, starts a loopback credential broker,
@@ -124,14 +128,10 @@ Summons, removes `OPENAI_API_KEY`, stores no metrics report, and emits only
 process resource summaries.
 
 Live voice quality, microphone consent, multi-display behavior, and visual
-polish still require testing on the target Mac. A trusted local signing identity
-is recommended for stable microphone permission across rebuilds:
-
-```sh
-RPT_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
-  OPENAI_API_KEY="your-key" \
-  ./scripts/run
-```
+polish still require testing on the target Mac. Follow the
+[live voice acceptance protocol](docs/evaluation/live-voice.md) for
+history-safe key entry, trusted signing, controlled latency and barge-in
+measurement, route changes, recovery, and teardown.
 
 ## Troubleshooting
 
