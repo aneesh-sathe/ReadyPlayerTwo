@@ -119,6 +119,39 @@ struct VoiceReadinessCheckerTests {
     #expect(await checker.check() == .brokerUnavailable)
     #expect(await httpClient.requests.isEmpty)
   }
+
+  @Test
+  func healthProbeRejectsRedirectedResponses() async throws {
+    let remoteEndpoint = try #require(
+      URL(string: "https://example.com/health")
+    )
+    let response = try #require(
+      HTTPURLResponse(
+        url: remoteEndpoint,
+        statusCode: 200,
+        httpVersion: nil,
+        headerFields: nil
+      )
+    )
+    let httpClient = HealthHTTPDataClient(
+      data: Data(
+        """
+        {"status":"ok","voice":"configured"}
+        """.utf8
+      ),
+      response: response
+    )
+    let checker = LoopbackVoiceReadinessChecker(
+      environment: [
+        "READYPLAYERTWO_BROKER_ORIGIN":
+          "http://127.0.0.1:43120",
+        "READYPLAYERTWO_VOICE_CONFIGURED": "1",
+      ],
+      httpClient: httpClient
+    )
+
+    #expect(await checker.check() == .brokerUnavailable)
+  }
 }
 
 private actor HealthHTTPDataClient: HTTPDataClient {

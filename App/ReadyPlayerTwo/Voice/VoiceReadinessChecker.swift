@@ -42,6 +42,7 @@ struct LoopbackVoiceReadinessChecker:
       let (data, response) = try await httpClient.data(for: request)
       guard
         (200..<300).contains(response.statusCode),
+        response.url == endpoint,
         let health = try? JSONDecoder().decode(
           BrokerHealthPayload.self,
           from: data
