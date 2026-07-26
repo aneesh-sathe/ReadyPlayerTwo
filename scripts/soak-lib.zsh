@@ -96,3 +96,61 @@ rpt_soak_verify_lineage() {
     return
   fi
 }
+
+rpt_soak_direct_children() {
+  local parent_pid="$1"
+
+  if [[ "$parent_pid" != <1-> ]]; then
+    rpt_die "A positive parent process identifier is required."
+    return
+  fi
+
+  local children
+  if children="$(/usr/bin/pgrep -P "$parent_pid" . 2>/dev/null)"; then
+    local child_pid
+    for child_pid in "${(@f)children}"; do
+      if [[ "$child_pid" != <1-> ]]; then
+        rpt_die "The process table returned an invalid child identifier."
+        return
+      fi
+      printf '%s\n' "$child_pid"
+    done
+    return
+  else
+    local pgrep_status="$?"
+    if (( pgrep_status != 1 )); then
+      rpt_die "The process table could not be inspected safely."
+      return
+    fi
+  fi
+}
+
+rpt_soak_unexpected_children() {
+  local launcher_pid="$1"
+  local broker_pid="$2"
+  local app_pid="$3"
+  local -a unexpected_children
+  unexpected_children=()
+
+  local parent_pid
+  local children
+  local child_pid
+  for parent_pid in "$launcher_pid" "$broker_pid" "$app_pid"; do
+    children="$(rpt_soak_direct_children "$parent_pid")" || return
+    if [[ -z "$children" ]]; then
+      continue
+    fi
+    for child_pid in "${(@f)children}"; do
+      if [[ "$parent_pid" == "$launcher_pid" &&
+        ("$child_pid" == "$broker_pid" || "$child_pid" == "$app_pid") ]]; then
+        continue
+      fi
+      unexpected_children+=("$child_pid")
+    done
+  done
+
+  if (( ${#unexpected_children} > 0 )); then
+    printf '%s\n' "${unexpected_children[@]}" |
+      LC_ALL=C /usr/bin/sort -n -u
+  fi
+}
