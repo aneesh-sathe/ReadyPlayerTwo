@@ -135,7 +135,7 @@ Issues and PRDs live in GitHub Issues for `aneesh-sathe/ReadyPlayerTwo`. Externa
 
 ### Triage labels
 
-Use the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` labels. See `docs/agents/triage-labels.md`.
+Map canonical triage roles to the repository's existing GitHub labels. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
