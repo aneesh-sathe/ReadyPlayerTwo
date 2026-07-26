@@ -6,6 +6,67 @@ import Testing
 @MainActor
 struct AudioRouteMonitorTests {
   @Test
+  func hardwareMovesSourceObservationToNewDefaultDevice() throws {
+    let defaultInput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultInputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let defaultOutput = AudioRouteProperty(
+      objectID: AudioObjectID(kAudioObjectSystemObject),
+      selector: kAudioHardwarePropertyDefaultOutputDevice,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+    let oldInputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(17),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeInput
+    )
+    let newInputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(31),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeInput
+    )
+    let outputDataSource = AudioRouteProperty(
+      objectID: AudioObjectID(23),
+      selector: kAudioDevicePropertyDataSource,
+      scope: kAudioDevicePropertyScopeOutput
+    )
+    let properties = ScriptedAudioRouteProperties(
+      values: [
+        defaultInput: 17,
+        defaultOutput: 23,
+        oldInputDataSource: 41,
+        outputDataSource: 43,
+      ]
+    )
+    let hardware = CoreAudioDefaultRouteHardware(properties: properties)
+    let recorder = AudioRouteChangeRecorder()
+    try hardware.observeDefaultRoute {
+      recorder.count += 1
+    }
+
+    properties.values[defaultInput] = 31
+    properties.values[oldInputDataSource] = nil
+    properties.values[newInputDataSource] = 47
+    properties.emitChange(for: defaultInput)
+
+    #expect(recorder.count == 1)
+    #expect(
+      Set(properties.activeProperties)
+        == Set([
+          defaultInput,
+          defaultOutput,
+          newInputDataSource,
+          outputDataSource,
+        ])
+    )
+
+    hardware.stopObservingDefaultRoute()
+    #expect(properties.activeObservations.isEmpty)
+  }
+
+  @Test
   func hardwareObservesSupportedDataSourcesAndCleansUp() throws {
     let defaultInput = AudioRouteProperty(
       objectID: AudioObjectID(kAudioObjectSystemObject),
@@ -177,6 +238,10 @@ private final class ScriptedAudioRouteProperties:
 
   var activeObservations: [AudioRoutePropertyObservation] {
     Array(observations.keys)
+  }
+
+  var activeProperties: [AudioRouteProperty] {
+    observations.values.map(\.property)
   }
 
   private var observations: [AudioRoutePropertyObservation: Observation] = [:]
