@@ -206,6 +206,46 @@ test("rejects model and voice values outside the V1 allowlist", async (context) 
   assert.equal(upstreamRequestCount, 0);
 });
 
+test("classifies and redacts upstream authentication failures", async (context) => {
+  const broker = await startBroker({
+    apiKey: "sk-standard-secret",
+    bearerToken: "test-launch-bearer",
+    safetyIdentifier: "local-test-user",
+    upstreamFetch: async () =>
+      Response.json(
+        {
+          error: {
+            message:
+              "Rejected sk-standard-secret for test-launch-bearer",
+          },
+        },
+        { status: 401 },
+      ),
+  });
+  context.after(() => broker.close());
+
+  const response = await fetch(
+    `${broker.origin}/v1/realtime/client-secret`,
+    {
+      headers: {
+        authorization: "Bearer test-launch-bearer",
+      },
+      method: "POST",
+    },
+  );
+  const responseText = await response.text();
+
+  assert.equal(response.status, 401);
+  assert.equal(
+    responseText,
+    '{"error":"upstream_authentication_failed"}',
+  );
+  assert.doesNotMatch(
+    responseText,
+    /sk-standard-secret|test-launch-bearer|rejected/i,
+  );
+});
+
 test("redacts upstream failure bodies and credentials", async (context) => {
   const broker = await startBroker({
     apiKey: "sk-standard-secret",

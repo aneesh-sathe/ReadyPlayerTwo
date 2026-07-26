@@ -117,6 +117,15 @@ async function handleRequest(
     },
   );
   if (!upstreamResponse.ok) {
+    if (
+      upstreamResponse.status === 401 ||
+      upstreamResponse.status === 403
+    ) {
+      sendJson(response, 401, {
+        error: "upstream_authentication_failed",
+      });
+      return;
+    }
     sendJson(response, 502, { error: "upstream_unavailable" });
     return;
   }
