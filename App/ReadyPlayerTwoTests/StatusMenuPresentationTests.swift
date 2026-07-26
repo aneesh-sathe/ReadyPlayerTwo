@@ -89,7 +89,7 @@ struct StatusMenuPresentationTests {
     let informationalItems = [
       try #require(
         diagnostics.items.first(where: {
-          $0.title == "Realtime Training: Not used by OpenAI"
+          $0.title == "Realtime Training: Not used by default"
         })
       ),
       try #require(

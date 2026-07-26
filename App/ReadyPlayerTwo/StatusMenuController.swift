@@ -288,7 +288,7 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
     }
     diagnosticsMenu.addItem(processingDiagnosticItem)
     for title in [
-      "Realtime Training: Not used by OpenAI",
+      "Realtime Training: Not used by default",
       "Realtime Application State: Not retained",
       "Abuse Monitoring: 30 days by default",
       "Zero Data Retention: Eligible, not guaranteed",
