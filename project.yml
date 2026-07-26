@@ -106,6 +106,29 @@ targets:
         Release:
           CODE_SIGN_IDENTITY: "-"
 
+  ReadyPlayerTwoUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: App/ReadyPlayerTwoUITests
+    dependencies:
+      - target: ReadyPlayerTwo
+    settings:
+      base:
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.aneeshsathe.readyplayertwo.ui-tests
+        PROVISIONING_PROFILE_SPECIFIER: ""
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+          ONLY_ACTIVE_ARCH: YES
+        Release:
+          CODE_SIGN_IDENTITY: "-"
+
 schemes:
   ReadyPlayerTwo:
     build:
@@ -118,3 +141,15 @@ schemes:
       gatherCoverageData: true
       targets:
         - name: ReadyPlayerTwoTests
+
+  ReadyPlayerTwoPackagedAcceptance:
+    build:
+      targets:
+        ReadyPlayerTwo: all
+        ReadyPlayerTwoUITests:
+          - test
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: ReadyPlayerTwoUITests

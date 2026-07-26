@@ -143,6 +143,9 @@
 - `project.yml` is the Xcode project source of truth. Never commit or hand-edit `ReadyPlayerTwo.xcodeproj`.
 - The current machine has no trusted Apple Development identity. Ad hoc signing builds and runs locally, but microphone consent may need to be granted again after rebuilds.
 - Xcode may report an outdated CoreSimulator framework while macOS builds and tests still pass. V1 does not require a simulator.
+- `ReadyPlayerTwoPackagedAcceptance` is the opt-in XCUITest scheme. Its `build-for-testing` action compiles under ad hoc signing.
+- Packaged acceptance uses the exact Debug-only `-ReadyPlayerTwoPackagedAcceptance` argument, isolated clean preferences, no global shortcut, no platform monitor, and fixed not-configured voice readiness.
+- This Mac stops XCUITest before test execution with LocalAuthentication code -2. Grant macOS UI-automation authorization or use a trusted signed runner to execute the opt-in suite.
 
 ## Agent skills
 
