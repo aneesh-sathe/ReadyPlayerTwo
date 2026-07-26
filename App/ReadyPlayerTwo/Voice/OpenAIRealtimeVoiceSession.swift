@@ -61,6 +61,7 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
   private let microphonePermission: any MicrophonePermissionPort
   private let broker: any BrokerClientPort
   private let transport: any RealtimeTransportPort
+  private let configuration: RealtimeVoiceConfiguration
   private let continuation: AsyncStream<VoiceSessionEvent>.Continuation
 
   private var lifecycle = Lifecycle.idle
@@ -72,11 +73,13 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
     microphonePermission: any MicrophonePermissionPort =
       SystemMicrophonePermission(),
     broker: any BrokerClientPort,
-    transport: any RealtimeTransportPort
+    transport: any RealtimeTransportPort,
+    configuration: RealtimeVoiceConfiguration = .companionV1
   ) {
     self.microphonePermission = microphonePermission
     self.broker = broker
     self.transport = transport
+    self.configuration = configuration
 
     let pair = AsyncStream<VoiceSessionEvent>.makeStream()
     events = pair.stream
@@ -120,7 +123,7 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
           message: "The voice connection closed while starting."
         )
       }
-      try transport.send(Self.sessionUpdate())
+      try transport.send(Self.sessionUpdate(configuration: configuration))
       lifecycle = .active
     } catch {
       transportEventTask?.cancel()
@@ -281,19 +284,15 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
     continuation.yield(.failed(failure))
   }
 
-  private static func sessionUpdate() throws -> Data {
+  private static func sessionUpdate(
+    configuration: RealtimeVoiceConfiguration
+  ) throws -> Data {
     let object: [String: Any] = [
       "type": "session.update",
       "session": [
         "type": "realtime",
-        "model": "gpt-realtime-2.1",
-        "instructions":
-          """
-        You are a warm, concise desktop companion. The person summoned you, \
-        so follow their lead and keep the exchange natural. You have no \
-        screen context in this version. Never claim to see their screen or \
-        infer what app or document they are using.
-        """,
+        "model": configuration.model,
+        "instructions": configuration.instructions,
         "output_modalities": ["audio"],
         "tools": [],
         "audio": [
@@ -306,7 +305,7 @@ final class OpenAIRealtimeVoiceSession: VoiceSessionPort {
             ]
           ],
           "output": [
-            "voice": "marin"
+            "voice": configuration.voice
           ],
         ],
       ],

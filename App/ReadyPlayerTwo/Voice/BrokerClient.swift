@@ -1,5 +1,23 @@
 import Foundation
 
+struct RealtimeVoiceConfiguration: Equatable, Sendable {
+  let model: String
+  let voice: String
+  let instructions: String
+
+  static let companionV1 = Self(
+    model: "gpt-realtime-2.1",
+    voice: "marin",
+    instructions:
+      """
+      You are a warm, concise desktop companion. The person summoned you, \
+      so follow their lead and keep the exchange natural. You have no \
+      screen context in this version. Never claim to see their screen or \
+      infer what app or document they are using.
+      """
+  )
+}
+
 struct EphemeralClientSecret: Equatable, Sendable {
   let value: String
   let expiresAt: Int
@@ -49,10 +67,12 @@ struct BrokerClient: BrokerClientPort, Sendable {
 
   private let endpoint: URL
   private let bearer: String
+  private let configuration: RealtimeVoiceConfiguration
   private let httpClient: any HTTPDataClient
 
   init(
     environment: [String: String] = ProcessInfo.processInfo.environment,
+    configuration: RealtimeVoiceConfiguration = .companionV1,
     httpClient: any HTTPDataClient = URLSessionHTTPDataClient()
   ) throws {
     guard
@@ -80,15 +100,26 @@ struct BrokerClient: BrokerClientPort, Sendable {
 
     self.endpoint = endpoint
     self.bearer = bearer
+    self.configuration = configuration
     self.httpClient = httpClient
   }
 
   func fetchClientSecret() async throws -> EphemeralClientSecret {
     var request = URLRequest(url: endpoint)
     request.httpMethod = "POST"
+    request.httpBody = try JSONEncoder().encode(
+      RequestedConfiguration(
+        model: configuration.model,
+        voice: configuration.voice
+      )
+    )
     request.setValue(
       "Bearer \(bearer)",
       forHTTPHeaderField: "Authorization"
+    )
+    request.setValue(
+      "application/json",
+      forHTTPHeaderField: "Content-Type"
     )
 
     let (data, response) = try await httpClient.data(for: request)
@@ -138,4 +169,9 @@ private struct SecretPayload: Decodable {
     case value
     case expiresAt = "expires_at"
   }
+}
+
+private struct RequestedConfiguration: Encodable {
+  let model: String
+  let voice: String
 }

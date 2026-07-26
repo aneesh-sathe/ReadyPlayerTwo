@@ -14,7 +14,12 @@ struct OpenAIRealtimeVoiceSessionTests {
     let session = OpenAIRealtimeVoiceSession(
       microphonePermission: permission,
       broker: broker,
-      transport: transport
+      transport: transport,
+      configuration: RealtimeVoiceConfiguration(
+        model: "configured-model",
+        voice: "configured-voice",
+        instructions: "Configured screen-blind instructions."
+      )
     )
     var events = session.events.makeAsyncIterator()
 
@@ -35,12 +40,18 @@ struct OpenAIRealtimeVoiceSessionTests {
 
     #expect(update["type"] as? String == "session.update")
     #expect(payload["type"] as? String == "realtime")
-    #expect(payload["model"] as? String == "gpt-realtime-2.1")
+    #expect(payload["model"] as? String == "configured-model")
+    #expect(
+      payload["instructions"] as? String
+        == "Configured screen-blind instructions."
+    )
     #expect(payload["output_modalities"] as? [String] == ["audio"])
     #expect(turnDetection["type"] as? String == "semantic_vad")
     #expect(turnDetection["eagerness"] as? String == "low")
     #expect(turnDetection["create_response"] as? Bool == true)
     #expect(turnDetection["interrupt_response"] as? Bool == true)
+    let output = try #require(audio["output"] as? [String: Any])
+    #expect(output["voice"] as? String == "configured-voice")
     #expect(
       transport.sentEvents.contains {
         (try? eventType($0)) == "response.create"

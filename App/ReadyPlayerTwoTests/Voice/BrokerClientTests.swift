@@ -32,6 +32,11 @@ struct BrokerClientTests {
         "READYPLAYERTWO_BROKER_BEARER": "launch-bearer",
         "READYPLAYERTWO_BROKER_ORIGIN": "http://127.0.0.1:43120",
       ],
+      configuration: RealtimeVoiceConfiguration(
+        model: "configured-model",
+        voice: "configured-voice",
+        instructions: "Not sent to the credential broker."
+      ),
       httpClient: httpClient
     )
 
@@ -57,7 +62,20 @@ struct BrokerClientTests {
       )
         == false
     )
-    #expect(request.httpBody == nil)
+    #expect(
+      request.value(forHTTPHeaderField: "Content-Type")
+        == "application/json"
+    )
+    let body = try #require(request.httpBody)
+    let configuration = try #require(
+      JSONSerialization.jsonObject(with: body) as? [String: String]
+    )
+    #expect(
+      configuration == [
+        "model": "configured-model",
+        "voice": "configured-voice",
+      ]
+    )
   }
 }
 
