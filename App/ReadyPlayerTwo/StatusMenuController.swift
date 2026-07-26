@@ -287,6 +287,20 @@ final class StatusMenuController: NSObject, StatusMenuPresenting {
       diagnosticsMenu.addItem(microphoneDiagnosticItem)
     }
     diagnosticsMenu.addItem(processingDiagnosticItem)
+    for title in [
+      "Realtime Training: Not used by OpenAI",
+      "Realtime Application State: Not retained",
+      "Abuse Monitoring: 30 days by default",
+      "Zero Data Retention: Eligible, not guaranteed",
+    ] {
+      let item = NSMenuItem(
+        title: title,
+        action: nil,
+        keyEquivalent: ""
+      )
+      item.isEnabled = false
+      diagnosticsMenu.addItem(item)
+    }
     diagnosticsItem.submenu = diagnosticsMenu
     menu.addItem(diagnosticsItem)
 

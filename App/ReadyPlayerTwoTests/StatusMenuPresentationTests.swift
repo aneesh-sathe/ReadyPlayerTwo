@@ -50,6 +50,80 @@ struct StatusMenuPresentationTests {
 
   @Test
   @MainActor
+  func statusMenuDisclosesProviderDataBoundariesWithoutLeaks() throws {
+    let providerDetail = "upstream-request-id-secret-8675309"
+    let failure = CompanionFailure(
+      kind: .authentication,
+      message: providerDetail
+    )
+    let controller = StatusMenuController()
+    controller.install(
+      actions: StatusMenuActions(
+        summonOrEnd: {},
+        roam: {},
+        park: {},
+        hideOrShow: {},
+        selectAvatar: { _ in },
+        moveToCurrentDisplay: {},
+        muteOrUnmute: {},
+        quit: {}
+      )
+    )
+    defer {
+      controller.uninstall()
+    }
+
+    controller.render(
+      snapshot(
+        voice: .error(failure),
+        bubble: .error(failure.message),
+        recoverableError: failure
+      )
+    )
+
+    let menu = try #require(controller.installedMenu)
+    let diagnostics = try #require(
+      menu.items.first(where: { $0.title == "Diagnostics" })?
+        .submenu
+    )
+    let informationalItems = [
+      try #require(
+        diagnostics.items.first(where: {
+          $0.title == "Realtime Training: Not used by OpenAI"
+        })
+      ),
+      try #require(
+        diagnostics.items.first(where: {
+          $0.title == "Realtime Application State: Not retained"
+        })
+      ),
+      try #require(
+        diagnostics.items.first(where: {
+          $0.title == "Abuse Monitoring: 30 days by default"
+        })
+      ),
+      try #require(
+        diagnostics.items.first(where: {
+          $0.title == "Zero Data Retention: Eligible, not guaranteed"
+        })
+      ),
+    ]
+
+    #expect(informationalItems.allSatisfy { !$0.isEnabled })
+    #expect(
+      diagnostics.items.allSatisfy {
+        !$0.title.contains(providerDetail)
+      }
+    )
+    #expect(
+      diagnostics.items.contains {
+        $0.title == "Voice Processing: Remote via OpenAI"
+      }
+    )
+  }
+
+  @Test
+  @MainActor
   func statusMenuExposesAnchoredShortcutSettings() throws {
     let presenter = RecordingShortcutSettingsPresenter()
     let controller = StatusMenuController(
