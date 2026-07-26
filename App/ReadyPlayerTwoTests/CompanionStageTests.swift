@@ -300,6 +300,84 @@ struct CompanionStageTests {
   }
 
   @Test
+  func motionPoseChangesCrossfadeButUnchangedHoldsDoNot() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+
+    let edgeDriver = ManualCompanionStageFrameDriver()
+    let edgeStage = try Self.scriptedRoamingStage(
+      resourceURL: resourceURL,
+      driver: edgeDriver,
+      intents: [.climbUp(entryFrom: .right)]
+    )
+    await edgeStage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+    #expect(edgeStage.lastCrossfadeDuration == 0)
+
+    edgeDriver.advance(by: 0.4)
+    #expect(edgeStage.currentAnimationState == AnimationStateID("wall-cling"))
+    #expect(edgeStage.lastCrossfadeDuration == 0.1)
+
+    edgeDriver.advance(by: 2.0 / 3.0)
+    #expect(edgeStage.currentAnimationState == AnimationStateID("climb-up"))
+    #expect(edgeStage.lastCrossfadeDuration == 0.1)
+
+    edgeDriver.advance(by: 0.8)
+    #expect(edgeStage.currentAnimationState == AnimationStateID("wall-cling"))
+    #expect(edgeStage.lastCrossfadeDuration == 0.1)
+
+    let takeoffDriver = ManualCompanionStageFrameDriver()
+    let takeoffStage = try Self.scriptedRoamingStage(
+      resourceURL: resourceURL,
+      driver: takeoffDriver,
+      intents: [.takeoff(.right)]
+    )
+    await takeoffStage.render(
+      Self.snapshot(
+        avatar: .athena,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+    #expect(takeoffStage.lastCrossfadeDuration == 0.2)
+
+    takeoffDriver.advance(by: 0.4)
+    #expect(
+      takeoffStage.currentAnimationState == AnimationStateID("hover")
+    )
+    #expect(takeoffStage.lastCrossfadeDuration == 0.1)
+
+    takeoffDriver.advance(by: 2.0 / 3.0)
+    #expect(
+      takeoffStage.currentAnimationState == AnimationStateID("hover")
+    )
+    #expect(takeoffStage.lastCrossfadeDuration == 0)
+
+    let glideDriver = ManualCompanionStageFrameDriver()
+    let glideStage = try Self.scriptedRoamingStage(
+      resourceURL: resourceURL,
+      driver: glideDriver,
+      intents: [.glide(.up)]
+    )
+    await glideStage.render(
+      Self.snapshot(
+        avatar: .athena,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+    glideDriver.advance(by: 2.4)
+
+    #expect(glideStage.currentAnimationState == AnimationStateID("hover"))
+    #expect(glideStage.lastCrossfadeDuration == 0.1)
+  }
+
+  @Test
   func oneDisplayTickCarriesAcrossMotionPlanStepsWithoutLosingTravel() async throws {
     let bundle = Bundle(for: AppDelegate.self)
     let resourceURL = try #require(bundle.resourceURL)
@@ -591,6 +669,16 @@ struct CompanionStageTests {
     )
     #expect(stage.characterCenter == StagePoint(x: 640, y: 400))
     #expect(!driver.isRunning)
+    #expect(stage.lastCrossfadeDuration == 0.2)
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .athena,
+        isVisible: true,
+        position: StagePoint(x: 640, y: 400)
+      )
+    )
+    #expect(stage.lastCrossfadeDuration == 0)
   }
 
   @Test
@@ -972,6 +1060,28 @@ struct CompanionStageTests {
       animationDriver: animationDriver,
       motionPreference: FixedCompanionStageMotionPreference(
         shouldReduceMotion: true
+      ),
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+  }
+
+  private static func scriptedRoamingStage(
+    resourceURL: URL,
+    driver: ManualCompanionStageFrameDriver,
+    intents: [MotionIntent]
+  ) throws -> CompanionStage {
+    try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(
+        surface: CompanionStageSurface(
+          visibleFrame: NSRect(x: 0, y: 0, width: 1_280, height: 800),
+          scaleFactor: 2
+        )
+      ),
+      frameDriver: driver,
+      roamingIntentSelector: ScriptedCompanionStageRoamingIntentSelector(
+        intents: intents
       ),
       panelPresentationEnabled: false,
       hostsSpriteView: false

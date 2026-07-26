@@ -350,6 +350,7 @@ final class CompanionStage: StagePort {
   static let canvasSize = NSSize(width: 128, height: 128)
   private static let roamingBurstDuration = 2.4
   private static let roamingHoldDuration = 3.0
+  private static let poseCrossfadeDuration = 0.1
   private static let relocationFadePhaseDuration = 0.1
   private static let clockEpsilon = 0.000_001
 
@@ -1032,10 +1033,19 @@ final class CompanionStage: StagePort {
       return
     }
 
+    let previousAnimationState = currentAnimationState
     currentAnimationState = animation.id
     currentFrameURLs = animation.frames
     animationElapsed = 0
-    lastCrossfadeDuration = avatarChanged ? 0.2 : 0
+    if avatarChanged {
+      lastCrossfadeDuration = 0.2
+    } else if previousAnimationState != nil,
+      previousAnimationState != animation.id
+    {
+      lastCrossfadeDuration = Self.poseCrossfadeDuration
+    } else {
+      lastCrossfadeDuration = 0
+    }
     renderer.showAnimation(
       animation,
       crossfadeDuration: lastCrossfadeDuration
