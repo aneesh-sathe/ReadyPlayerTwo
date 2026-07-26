@@ -523,6 +523,236 @@ struct CompanionStageTests {
   }
 
   @Test
+  func crossDisplayRelocationFadesOnePanelWithoutSnapping() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let animationDriver = ManualCompanionStageAnimationDriver()
+    let stage = try Self.relocationStage(
+      resourceURL: resourceURL,
+      animationDriver: animationDriver
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "built-in",
+        position: StagePoint(x: 200, y: 300)
+      )
+    )
+    let originalPanel = stage.panel
+    let originalOrigin = NSPoint(x: 136, y: 236)
+    #expect(originalPanel.frame.origin == originalOrigin)
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "external",
+        position: StagePoint(x: -800, y: 500),
+        voice: .listening
+      )
+    )
+
+    #expect(stage.panel === originalPanel)
+    #expect(stage.panel.frame.origin == originalOrigin)
+    #expect(stage.characterCenter == StagePoint(x: 200, y: 300))
+    #expect(stage.panel.alphaValue == 1)
+    #expect(animationDriver.requestedDurations == [0.1])
+
+    animationDriver.completeNextAnimation()
+
+    #expect(stage.panel === originalPanel)
+    #expect(stage.panel.alphaValue == 0)
+    #expect(stage.characterCenter == StagePoint(x: -800, y: 500))
+    #expect(stage.panel.frame.origin == NSPoint(x: -864, y: 436))
+    #expect(animationDriver.requestedDurations == [0.1, 0.1])
+
+    animationDriver.completeNextAnimation()
+
+    #expect(stage.panel === originalPanel)
+    #expect(stage.panel.alphaValue == 1)
+    #expect(stage.panel.frame.origin == NSPoint(x: -864, y: 436))
+  }
+
+  @Test
+  func firstLaunchAndSameDisplayDragStayImmediate() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let animationDriver = ManualCompanionStageAnimationDriver()
+    let stage = try Self.relocationStage(
+      resourceURL: resourceURL,
+      animationDriver: animationDriver
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "built-in",
+        position: StagePoint(x: 200, y: 300),
+        voice: .listening
+      )
+    )
+
+    #expect(stage.characterCenter == StagePoint(x: 200, y: 300))
+    #expect(stage.panel.frame.origin == NSPoint(x: 136, y: 236))
+    #expect(animationDriver.requestedDurations.isEmpty)
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "built-in",
+        position: StagePoint(x: 500, y: 450),
+        presence: .parked
+      )
+    )
+
+    #expect(stage.characterCenter == StagePoint(x: 500, y: 450))
+    #expect(stage.panel.frame.origin == NSPoint(x: 436, y: 386))
+    #expect(stage.panel.alphaValue == 1)
+    #expect(animationDriver.requestedDurations.isEmpty)
+  }
+
+  @Test
+  func hideDuringRelocationCannotLeaveTheNextShowTransparent() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let animationDriver = ManualCompanionStageAnimationDriver()
+    let stage = try Self.relocationStage(
+      resourceURL: resourceURL,
+      animationDriver: animationDriver
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "built-in",
+        position: StagePoint(x: 200, y: 300)
+      )
+    )
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "external",
+        position: StagePoint(x: -800, y: 500)
+      )
+    )
+    #expect(animationDriver.requestedDurations == [0.1])
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: false,
+        displayID: "external",
+        position: StagePoint(x: -800, y: 500)
+      )
+    )
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "external",
+        position: StagePoint(x: -760, y: 460),
+        presence: .parked
+      )
+    )
+
+    #expect(stage.panel.alphaValue == 1)
+    #expect(stage.characterCenter == StagePoint(x: -760, y: 460))
+    #expect(stage.panel.frame.origin == NSPoint(x: -824, y: 396))
+
+    animationDriver.completeNextAnimation()
+
+    #expect(stage.panel.alphaValue == 1)
+    #expect(stage.characterCenter == StagePoint(x: -760, y: 460))
+    #expect(stage.panel.frame.origin == NSPoint(x: -824, y: 396))
+  }
+
+  @Test
+  func relocationFinishesAtTheLatestCrossDisplayDestination() async throws {
+    let bundle = Bundle(for: AppDelegate.self)
+    let resourceURL = try #require(bundle.resourceURL)
+    let animationDriver = ManualCompanionStageAnimationDriver()
+    let stage = try Self.relocationStage(
+      resourceURL: resourceURL,
+      animationDriver: animationDriver
+    )
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "built-in",
+        position: StagePoint(x: 200, y: 300)
+      )
+    )
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "external",
+        position: StagePoint(x: -800, y: 500)
+      )
+    )
+    animationDriver.completeNextAnimation()
+    #expect(stage.panel.alphaValue == 0)
+    #expect(stage.characterCenter == StagePoint(x: -800, y: 500))
+
+    await stage.render(
+      Self.snapshot(
+        avatar: .orion,
+        isVisible: true,
+        displayID: "third",
+        position: StagePoint(x: 600, y: 500),
+        presence: .parked
+      )
+    )
+    #expect(stage.panel.alphaValue == 0)
+    #expect(stage.characterCenter == StagePoint(x: 600, y: 500))
+    #expect(stage.panel.frame.origin == NSPoint(x: 536, y: 436))
+
+    animationDriver.completeNextAnimation()
+
+    #expect(stage.panel.alphaValue == 1)
+    #expect(stage.characterCenter == StagePoint(x: 600, y: 500))
+    #expect(stage.panel.frame.origin == NSPoint(x: 536, y: 436))
+
+    await drainStageTasks()
+
+    #expect(stage.panel.alphaValue == 1)
+    #expect(stage.characterCenter == StagePoint(x: 600, y: 500))
+    #expect(stage.panel.frame.origin == NSPoint(x: 536, y: 436))
+  }
+
+  @Test
+  func appKitFadeCancellationKeepsTheReplacementAlpha() async throws {
+    let panel = NSPanel(
+      contentRect: NSRect(x: 0, y: 0, width: 128, height: 128),
+      styleMask: [.borderless],
+      backing: .buffered,
+      defer: false
+    )
+    let animationDriver = AppKitCompanionStageAnimationDriver()
+    panel.alphaValue = 1
+
+    animationDriver.fade(
+      panel,
+      to: 0,
+      duration: 0.02
+    ) {}
+    animationDriver.cancelFades(for: panel)
+    panel.alphaValue = 1
+
+    try await Task.sleep(for: .milliseconds(100))
+
+    #expect(panel.alphaValue == 1)
+  }
+
+  @Test
   func alphaHitTestingRoutesClickAndDragOnlyThroughCharacterPixels() async throws {
     let bundle = Bundle(for: AppDelegate.self)
     let resourceURL = try #require(bundle.resourceURL)
@@ -587,18 +817,47 @@ struct CompanionStageTests {
     #expect(!stage.panel.canBecomeMain)
   }
 
+  private static func relocationStage(
+    resourceURL: URL,
+    animationDriver: any CompanionStageAnimationDriving
+  ) throws -> CompanionStage {
+    try CompanionStage(
+      assetRootURL: resourceURL,
+      terrain: FixedCompanionStageTerrain(
+        surface: CompanionStageSurface(
+          visibleFrame: NSRect(
+            x: -1_280,
+            y: 0,
+            width: 2_560,
+            height: 800
+          ),
+          scaleFactor: 2
+        )
+      ),
+      frameDriver: ManualCompanionStageFrameDriver(),
+      animationDriver: animationDriver,
+      motionPreference: FixedCompanionStageMotionPreference(
+        shouldReduceMotion: true
+      ),
+      panelPresentationEnabled: false,
+      hostsSpriteView: false
+    )
+  }
+
   private static func snapshot(
     avatar: CompanionAvatar,
     isVisible: Bool,
+    displayID: String = "main",
     position: StagePoint = StagePoint(x: 640, y: 400),
+    presence: PresenceState? = nil,
     voice: VoiceSessionState = .idle
   ) -> CompanionSnapshot {
     CompanionSnapshot(
       avatar: avatar,
-      basePresence: isVisible ? .roaming : .hidden,
+      basePresence: presence ?? (isVisible ? .roaming : .hidden),
       isVisible: isVisible,
       placement: CompanionPlacement(
-        displayID: "main",
+        displayID: displayID,
         position: position
       ),
       voice: voice,
@@ -657,6 +916,49 @@ private final class ManualCompanionStageFrameDriver:
 
   func advance(by elapsed: TimeInterval) {
     tick?(elapsed)
+  }
+}
+
+@MainActor
+private final class ManualCompanionStageAnimationDriver:
+  CompanionStageAnimationDriving
+{
+  private struct Request {
+    weak var panel: NSPanel?
+    let alphaValue: CGFloat
+    let completion: @MainActor () -> Void
+  }
+
+  private var requests: [Request] = []
+  private(set) var requestedDurations: [TimeInterval] = []
+
+  func fade(
+    _ panel: NSPanel,
+    to alphaValue: CGFloat,
+    duration: TimeInterval,
+    completion: @escaping @MainActor () -> Void
+  ) {
+    requestedDurations.append(duration)
+    requests.append(
+      Request(
+        panel: panel,
+        alphaValue: alphaValue,
+        completion: completion
+      )
+    )
+  }
+
+  func cancelFades(for panel: NSPanel) {
+    requests.removeAll(where: { $0.panel === panel })
+  }
+
+  func completeNextAnimation() {
+    guard !requests.isEmpty else {
+      return
+    }
+    let request = requests.removeFirst()
+    request.panel?.alphaValue = request.alphaValue
+    request.completion()
   }
 }
 

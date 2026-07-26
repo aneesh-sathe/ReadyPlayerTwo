@@ -54,6 +54,48 @@ protocol CompanionStageFrameDriving: AnyObject {
 }
 
 @MainActor
+protocol CompanionStageAnimationDriving: AnyObject {
+  func fade(
+    _ panel: NSPanel,
+    to alphaValue: CGFloat,
+    duration: TimeInterval,
+    completion: @escaping @MainActor () -> Void
+  )
+  func cancelFades(for panel: NSPanel)
+}
+
+@MainActor
+final class AppKitCompanionStageAnimationDriver:
+  CompanionStageAnimationDriving
+{
+  func fade(
+    _ panel: NSPanel,
+    to alphaValue: CGFloat,
+    duration: TimeInterval,
+    completion: @escaping @MainActor () -> Void
+  ) {
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = duration
+      context.timingFunction = CAMediaTimingFunction(
+        name: .easeInEaseOut
+      )
+      panel.animator().alphaValue = alphaValue
+    } completionHandler: {
+      MainActor.assumeIsolated {
+        completion()
+      }
+    }
+  }
+
+  func cancelFades(for panel: NSPanel) {
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0
+      panel.animator().alphaValue = panel.alphaValue
+    }
+  }
+}
+
+@MainActor
 final class CompanionSpriteScene: SKScene {
   var frameTick: ((TimeInterval) -> Void)?
   private var previousUpdateTime: TimeInterval?
@@ -308,6 +350,7 @@ final class CompanionStage: StagePort {
   static let canvasSize = NSSize(width: 128, height: 128)
   private static let roamingBurstDuration = 2.4
   private static let roamingHoldDuration = 3.0
+  private static let relocationFadePhaseDuration = 0.1
   private static let clockEpsilon = 0.000_001
 
   let panel: CompanionPanel
@@ -315,6 +358,7 @@ final class CompanionStage: StagePort {
   private let manifests: [CompanionAvatar: AvatarAnimationManifest]
   private let terrain: any CompanionStageTerrain
   private let frameDriver: any CompanionStageFrameDriving
+  private let animationDriver: any CompanionStageAnimationDriving
   private let motionPreference: any CompanionStageMotionPreference
   private let roamingIntentSelector: any CompanionStageRoamingIntentSelecting
   private let actions: CompanionStageActions
@@ -326,6 +370,9 @@ final class CompanionStage: StagePort {
   private var animationElapsed = 0.0
   private var burstElapsed = 0.0
   private var holdRemaining = 0.0
+  private var relocationGeneration = 0
+  private var isRelocating = false
+  private var relocationPositionedPlacement: CompanionPlacement?
 
   private(set) var presentedAvatar = CompanionAvatar.orion
   private(set) var currentMotionPlan: MotionPlan?
@@ -370,6 +417,8 @@ final class CompanionStage: StagePort {
     terrain: any CompanionStageTerrain = ScreenCompanionStageTerrain(),
     frameDriver suppliedFrameDriver:
       (any CompanionStageFrameDriving)? = nil,
+    animationDriver: any CompanionStageAnimationDriving =
+      AppKitCompanionStageAnimationDriver(),
     motionPreference: any CompanionStageMotionPreference =
       SystemCompanionStageMotionPreference(),
     roamingIntentSelector: any CompanionStageRoamingIntentSelecting =
@@ -403,6 +452,7 @@ final class CompanionStage: StagePort {
 
     manifests = loadedManifests
     self.terrain = terrain
+    self.animationDriver = animationDriver
     self.motionPreference = motionPreference
     self.roamingIntentSelector = roamingIntentSelector
     self.actions = actions
@@ -433,11 +483,46 @@ final class CompanionStage: StagePort {
     )
 
     guard snapshot.isVisible else {
+      relocationGeneration &+= 1
+      isRelocating = false
+      relocationPositionedPlacement = nil
+      animationDriver.cancelFades(for: panel)
+      panel.alphaValue = 1
       stopMotion()
       latestSnapshot = snapshot
       lastRuntimePlacement = snapshot.placement
       panel.stopPointerTracking()
       panel.orderOut(nil)
+      return
+    }
+
+    if isRelocating {
+      lastRuntimePlacement = snapshot.placement
+      latestSnapshot = snapshot
+      updateSpacePolicy(for: snapshot)
+      if let positionedPlacement = relocationPositionedPlacement,
+        positionedPlacement != snapshot.placement
+      {
+        relocationGeneration &+= 1
+        let generation = relocationGeneration
+        animationDriver.cancelFades(for: panel)
+        panel.alphaValue = 0
+        characterCenter = snapshot.placement.position
+        relocationPositionedPlacement = snapshot.placement
+        positionPanel()
+        beginRelocationFadeIn(generation: generation)
+      }
+      return
+    }
+
+    let crossesDisplays =
+      latestSnapshot?.isVisible == true
+      && lastRuntimePlacement?.displayID != snapshot.placement.displayID
+    if crossesDisplays {
+      lastRuntimePlacement = snapshot.placement
+      latestSnapshot = snapshot
+      updateSpacePolicy(for: snapshot)
+      beginCrossDisplayRelocation()
       return
     }
 
@@ -489,6 +574,58 @@ final class CompanionStage: StagePort {
     panel.present(scene: renderer.scene)
     panel.startPointerTracking()
     panel.orderFrontRegardless()
+  }
+
+  private func beginCrossDisplayRelocation() {
+    relocationGeneration &+= 1
+    let generation = relocationGeneration
+    isRelocating = true
+    relocationPositionedPlacement = nil
+    stopMotion()
+    panel.stopPointerTracking()
+
+    animationDriver.fade(
+      panel,
+      to: 0,
+      duration: Self.relocationFadePhaseDuration
+    ) { [weak self] in
+      guard
+        let self,
+        self.relocationGeneration == generation,
+        let snapshot = self.latestSnapshot,
+        snapshot.isVisible
+      else {
+        return
+      }
+
+      self.characterCenter = snapshot.placement.position
+      self.relocationPositionedPlacement = snapshot.placement
+      self.positionPanel()
+      self.beginRelocationFadeIn(generation: generation)
+    }
+  }
+
+  private func beginRelocationFadeIn(generation: Int) {
+    animationDriver.fade(
+      panel,
+      to: 1,
+      duration: Self.relocationFadePhaseDuration
+    ) { [weak self] in
+      guard
+        let self,
+        self.relocationGeneration == generation
+      else {
+        return
+      }
+      self.isRelocating = false
+      self.relocationPositionedPlacement = nil
+      guard let snapshot = self.latestSnapshot else {
+        return
+      }
+      Task { @MainActor [weak self] in
+        await self?.render(snapshot)
+      }
+    }
   }
 
   private func settleForConversation(_ snapshot: CompanionSnapshot) {
