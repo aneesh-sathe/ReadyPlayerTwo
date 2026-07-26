@@ -5,6 +5,9 @@ import CompanionRuntime
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var coordinator: ApplicationCoordinator?
+  private var runtime: CompanionRuntime?
+  private var shortcutController: GlobalShortcutController?
+  private var platformEventMonitor: MacPlatformEventMonitor?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
@@ -38,10 +41,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       preferencesStore: preferencesStore,
       initialPreferences: preferences
     )
+    let shortcutController = GlobalShortcutController(
+      registrar: CarbonGlobalShortcutRegistrar()
+    )
+    _ = shortcutController.activate(preferences.shortcut) {
+      Task {
+        await runtime.send(.summon(.keyboardShortcut))
+      }
+    }
+    let platformEventMonitor = MacPlatformEventMonitor { event in
+      await runtime.send(.platform(event))
+    }
+    platformEventMonitor.start()
+
     self.coordinator = coordinator
+    self.runtime = runtime
+    self.shortcutController = shortcutController
+    self.platformEventMonitor = platformEventMonitor
 
     Task {
       await coordinator.start()
     }
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    shortcutController?.deactivate()
+    platformEventMonitor?.stop()
   }
 }
