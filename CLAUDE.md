@@ -142,7 +142,7 @@
 - `./scripts/soak` defaults to a 7200-second no-key run through the supervised launcher. `RPT_SOAK_DURATION_SECONDS` accepts 1 through 86400 for shorter checks.
 - The soak enforces combined resident memory below 200 MiB immediately. After a 120-second warm-up, it enforces a 12-sample combined CPU ceiling of 5 percent for Roaming or 2 percent for an operator-declared Park run, plus deterministic continuous RSS growth checks.
 - `RPT_SOAK_EXPECTED_PRESENCE=park` selects the Park CPU policy but cannot change or verify presence. The operator must choose Park manually within the warm-up.
-- Five-second and ten-second no-key soak checks passed on this Mac with exact-PID teardown. No two-hour soak has been executed yet.
+- Five-second, ten-second, and 180-second no-key soak checks passed on this Mac with exact-PID teardown. The 180-second run evaluated one settled CPU and RSS growth window. No two-hour soak has been executed yet.
 - `RPT_LIFECYCLE_REPORT_PATH` is a test-only launcher seam that writes an owner-only PID report. Never add credentials, endpoints, or user data to it.
 - The authoritative Swift format path discovery includes `App/ReadyPlayerTwoUITests`.
 - `project.yml` is the Xcode project source of truth. Never commit or hand-edit `ReadyPlayerTwo.xcodeproj`.
