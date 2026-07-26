@@ -125,6 +125,20 @@ rpt_write_lifecycle_report() {
     rpt_die "The lifecycle report could not be created safely."
 }
 
+rpt_local_swift_source_paths() {
+  local candidate
+  for candidate in \
+    "$RPT_ROOT/App/ReadyPlayerTwo" \
+    "$RPT_ROOT/App/ReadyPlayerTwoTests" \
+    "$RPT_ROOT/App/ReadyPlayerTwoUITests" \
+    "$RPT_ROOT"/Packages/*/Sources(N) \
+    "$RPT_ROOT"/Packages/*/Tests(N); do
+    if [[ -d "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+    fi
+  done
+}
+
 rpt_swift_format() {
   if command -v swift-format >/dev/null 2>&1; then
     swift-format "$@"

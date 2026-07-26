@@ -48,16 +48,7 @@ rpt_reject_pattern \
   "$RPT_ROOT/Broker/src" \
   "$RPT_ROOT/project.yml"
 
-local_swift_paths=()
-for swift_path in \
-  "$RPT_ROOT/App/ReadyPlayerTwo" \
-  "$RPT_ROOT/App/ReadyPlayerTwoTests" \
-  "$RPT_ROOT"/Packages/*/Sources(N) \
-  "$RPT_ROOT"/Packages/*/Tests(N); do
-  if [[ -d "$swift_path" ]]; then
-    local_swift_paths+=("$swift_path")
-  fi
-done
+local_swift_paths=("${(@f)$(rpt_local_swift_source_paths)}")
 
 if (( ${#local_swift_paths} > 0 )); then
   rpt_note "Linting Swift formatting..."
