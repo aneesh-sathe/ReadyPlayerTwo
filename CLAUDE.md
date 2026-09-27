@@ -10,7 +10,10 @@
 
 - The first shippable release targets macOS only.
 - The product is a voice-first, app-agnostic desktop Companion for people in any profession.
-- Ship v1 as a locally built macOS app bundle that does not require App Store publication.
+- Distribute v1 as a prebuilt app through the personal Homebrew tap `aneesh-sathe/homebrew-tap`, never the App Store. See ADR 0016.
+- The public beta is ad hoc signed. Developer ID signing and notarization follow Apple Developer Program enrollment.
+- Never strip the quarantine attribute or otherwise bypass Gatekeeper on a person's behalf.
+- An installed app must work from `/Applications` without Xcode, Node.js, a repository clone, or the development launcher.
 - Provide one terminal command that builds, launches, and supervises the local app and credential broker during development.
 - Quit from the Status Menu or interrupting the development launcher must stop the app, Voice Session, microphone, windows, and broker without orphaned processes.
 - Run as a Dockless agent app and keep a persistent Status Menu in the macOS menu bar.
