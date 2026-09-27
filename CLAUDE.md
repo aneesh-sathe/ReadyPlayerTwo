@@ -14,6 +14,9 @@
 - The public beta is ad hoc signed. Developer ID signing and notarization follow Apple Developer Program enrollment.
 - Never strip the quarantine attribute or otherwise bypass Gatekeeper on a person's behalf.
 - An installed app must work from `/Applications` without Xcode, Node.js, a repository clone, or the development launcher.
+- Design for people who have never used Terminal. After the one-time `brew install`, every setup, key, and recovery step happens from the menu bar item and the windows it opens.
+- User-facing text never mentions Terminal, environment variables, brokers, launchers, or scripts.
+- OpenAI offers no supported way for third-party apps to bill a ChatGPT subscription, as of September 2026. Never reuse Codex sign-in tokens. See #29.
 - Provide one terminal command that builds, launches, and supervises the local app and credential broker during development.
 - Quit from the Status Menu or interrupting the development launcher must stop the app, Voice Session, microphone, windows, and broker without orphaned processes.
 - Run as a Dockless agent app and keep a persistent Status Menu in the macOS menu bar.
