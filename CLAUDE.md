@@ -99,9 +99,11 @@
 ## Security
 
 - Complete a focused voice data-flow review before shipping the OpenAI Realtime integration.
-- Never embed a standard OpenAI API key in the local app.
-- Use a stateless credential broker to mint short-lived Realtime client secrets.
-- Connect the local app directly to OpenAI Realtime so the broker does not proxy conversation audio.
+- Never embed a developer-owned or shared OpenAI API key in any build.
+- The Homebrew beta uses person-supplied OpenAI keys. See ADR 0017.
+- Store a person-supplied key only in the macOS Keychain. Never write it to preferences, files, or logs.
+- Mint short-lived Realtime client secrets outside the app process, in the loopback broker today and a bundled credential service for installed builds.
+- Connect the app directly to OpenAI Realtime so no credential component proxies conversation audio.
 - Probe voice readiness once at launch with an unauthenticated, body-free GET to
   the strict loopback broker `/health` endpoint. Reject redirects and never use
   this probe to contact OpenAI.
@@ -120,7 +122,7 @@
 - Use SpriteKit in a transparent `SKView` for character rendering.
 - Limit SwiftUI to compact settings UI.
 - Use a pinned macOS WebRTC XCFramework behind a Realtime Adapter.
-- Use a Node.js 24 LTS TypeScript broker bound to loopback for short-lived Realtime credentials.
+- Use a Node.js 24 LTS TypeScript broker bound to loopback for short-lived Realtime credentials in the development launcher. Installed builds must not depend on Node.js.
 - Remove `OPENAI_API_KEY` from the app process environment when the launcher starts it.
 - Make `CompanionRuntime` the high behavioral Seam with a command Interface and observable snapshots.
 - Keep AppKit, SpriteKit, OpenAI Realtime, the credential broker, platform events, clock, and randomness behind production and deterministic test Adapters.
